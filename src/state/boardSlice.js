@@ -52,11 +52,22 @@ const boardSlice = createSlice({
             }
         },
         addObjectOptimistically: (state, action) => {
-            if (state.activeBoard) {
+            console.log('[Redux] addObjectOptimistically:', action.payload.id, action.payload.type);
+            console.log('[Redux] activeBoard exists:', !!state.activeBoard);
+            console.log('[Redux] activeBoard.objects exists:', !!state.activeBoard?.objects);
+            console.log('[Redux] objects count before:', state.activeBoard?.objects?.length || 0);
+            
+            if (state.activeBoard && state.activeBoard.objects) {
                 const exists = state.activeBoard.objects.some(o => o.id === action.payload.id);
                 if (!exists) {
                     state.activeBoard.objects.push(action.payload);
+                    console.log('[Redux] Object added! New count:', state.activeBoard.objects.length);
+                } else {
+                    console.log('[Redux] Object already exists, skipping');
                 }
+            } else {
+                console.error('[Redux] CANNOT ADD: activeBoard or objects is null!');
+                console.error('[Redux] state.activeBoard:', state.activeBoard);
             }
         },
         deleteObjectOptimistically: (state, action) => {

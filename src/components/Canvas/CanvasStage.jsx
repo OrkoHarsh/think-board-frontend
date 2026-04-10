@@ -1,9 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Stage, Layer, Line, Arrow as KonvaArrow, Rect as KonvaRect, Transformer, Group, Path, Rect as KonvaRectLabel, Text as KonvaText } from 'react-konva';
+import { Stage, Layer, Line, Arrow as KonvaArrow, Rect as KonvaRect, Transformer, Group, Path, Rect as KonvaRectLabel, Text as KonvaText, Circle, Text } from 'react-konva';
 import Shape from './Shape';
 import StickyNote from './StickyNote';
 import Connector from './Connector';
 import IconNode from './IconNode';
+import AnimatedConnector from './AnimatedConnector';
+import AnimatedIconNode from './AnimatedIconNode';
+import AnimatedRect from './AnimatedRect';
 import { generateId } from '../../utils/helpers';
 
 const DRAW_TOOLS = ['line', 'arrow', 'freehand'];
@@ -35,6 +38,18 @@ const CanvasStage = forwardRef(({
     const lastClickPosRef = useRef(null);
     const cycleIndexRef = useRef(0);
     const lastPositionsRef = useRef({});
+    const prevCountRef = useRef(0);
+
+    // Debug: log when objects change
+    useEffect(() => {
+        console.log('>>> CanvasStage: objects array =', objects);
+        console.log('>>> CanvasStage: objects length =', objects?.length);
+        console.log('>>> CanvasStage: objects types =', objects?.map(o => `${o.type}(${o.id})`));
+        if (objects.length !== prevCountRef.current) {
+            console.log('>>> CanvasStage: objects CHANGED from', prevCountRef.current, 'to', objects.length);
+            prevCountRef.current = objects.length;
+        }
+    }, [objects]);
 
     // Export methods via forwardRef
     useImperativeHandle(ref, () => ({
@@ -342,8 +357,16 @@ const CanvasStage = forwardRef(({
                 }}
             >
                 <Layer>
-                    {objects.map((obj) => {
+                    {(objects || []).map((obj, idx) => {
                         const isSelected = selectedIds.includes(obj.id);
+                        
+                        // Detect if this is an AI-generated diagram object (uses animated components)
+                        // AI objects have IDs like "icon-A", "node-B", "arrow-0"
+                        const isDiagramObject = obj.id.startsWith('icon-') || obj.id.startsWith('node-') || obj.id.startsWith('arrow-');
+                        
+                        // Stagger pulse animation timing for diagram objects
+                        const pulseDelay = isDiagramObject ? idx * 0.15 : 0;
+
                         if (obj.type === 'sticky') {
                             return (
                                 <StickyNote
@@ -356,6 +379,18 @@ const CanvasStage = forwardRef(({
                             );
                         }
                         if (obj.type === 'line' || obj.type === 'arrow' || obj.type === 'freehand') {
+                            // Use AnimatedConnector for AI-generated arrows, regular Connector for user-drawn
+                            if (isDiagramObject && obj.type === 'arrow') {
+                                return (
+                                    <AnimatedConnector
+                                        key={obj.id}
+                                        connectorProps={obj}
+                                        isSelected={isSelected}
+                                        onSelect={(e) => handleObjSelect(obj.id, e)}
+                                        onChange={(a) => onUpdate(obj.id, a)}
+                                    />
+                                );
+                            }
                             return (
                                 <Connector
                                     key={obj.id}
@@ -368,12 +403,26 @@ const CanvasStage = forwardRef(({
                         }
                         if (obj.type === 'icon') {
                             return (
-                                <IconNode
+                                <AnimatedIconNode
                                     key={obj.id}
                                     iconProps={obj}
                                     isSelected={isSelected}
                                     onSelect={(e) => handleObjSelect(obj.id, e)}
                                     onChange={(a) => onUpdate(obj.id, a)}
+                                    pulseDelay={isDiagramObject ? idx * 0.12 : 0}
+                                />
+                            );
+                        }
+                        // Default: rect/diamond/circle/etc.
+                        if (isDiagramObject && obj.type === 'rect') {
+                            return (
+                                <AnimatedRect
+                                    key={obj.id}
+                                    shapeProps={obj}
+                                    isSelected={isSelected}
+                                    onSelect={(e) => handleObjSelect(obj.id, e)}
+                                    onChange={(a) => onUpdate(obj.id, a)}
+                                    pulseDelay={pulseDelay}
                                 />
                             );
                         }

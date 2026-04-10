@@ -10,6 +10,7 @@ import AskNimbusModal from '../components/AI/AskNimbusModal';
 import IconPalette from '../components/Icons/IconPalette';
 import { generateId } from '../utils/helpers';
 import { aiApi } from '../services/api';
+import { mermaidToBoardObjects } from '../utils/mermaidMapper';
 
 const BoardPage = () => {
     const { boardId } = useParams();
@@ -35,6 +36,21 @@ const BoardPage = () => {
 
     const { board, status, error, updateObject, addObject, deleteObject, sendCursor, sendRaw } =
         useBoardData(boardId, presenceCallbacks);
+
+    // Ref to track current objects for immediate access
+    const currentObjectsRef = useRef([]);
+    useEffect(() => {
+        currentObjectsRef.current = board?.objects || [];
+    }, [board?.objects]);
+
+    // Clear all objects from the board
+    const clearBoard = useCallback(() => {
+        const objects = currentObjectsRef.current;
+        if (objects.length > 0) {
+            console.log(`>>> Clearing ${objects.length} existing objects`);
+            objects.forEach(obj => deleteObject(obj.id));
+        }
+    }, [deleteObject]);
 
     // Send user.join with name to collaborators (after sendRaw is defined)
     useEffect(() => {
@@ -343,23 +359,32 @@ const BoardPage = () => {
                     onClose={() => setIsAIModalOpen(false)}
                     onGenerate={async (prompt) => {
                         try {
+                            console.log('>>> AI Generate triggered');
                             const response = await aiApi.generate(boardId, prompt);
-                            const { nodes = [] } = response.data;
+                            console.log('>>> API Response:', JSON.stringify(response, null, 2));
+                            const mermaid = response.data?.mermaid;
+                            console.log('>>> Mermaid string:', mermaid);
+                            if (!mermaid) {
+                                console.error('>>> No mermaid in response!');
+                                throw new Error('AI returned empty diagram');
+                            }
                             const center = getCenterPos();
-                            nodes.forEach((node, i) => {
-                                addObject({
-                                    id: generateId(),
-                                    type: node.type || 'sticky',
-                                    x: center.x + (i % 4) * 180,
-                                    y: center.y + Math.floor(i / 4) * 180,
-                                    text: node.text || node.label || '',
-                                    fill: node.fill || '#FEF3C7',
-                                    width: node.width || 150,
-                                    height: node.height || 150,
-                                });
+                            console.log('>>> Center position:', center);
+                            const objects = await mermaidToBoardObjects(mermaid, center.x - 300, center.y - 200);
+                            console.log('>>> Generated objects:', objects.length, objects);
+
+                            // Clear existing objects first
+                            clearBoard();
+
+                            // Wait for deletions to propagate, then add new objects
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            
+                            objects.forEach((obj) => {
+                                console.log('>>> Adding object:', obj);
+                                addObject(obj);
                             });
                         } catch (err) {
-                            console.error('AI generation failed:', err);
+                            console.error('>>> AI generation failed:', err);
                             handleAddNote();
                         }
                         setIsAIModalOpen(false);

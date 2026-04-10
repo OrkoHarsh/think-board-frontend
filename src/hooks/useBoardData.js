@@ -51,6 +51,7 @@ export const useBoardData = (boardId, presenceCallbacks = {}) => {
     }, [dispatch, sendUpdate]);
 
     const addObject = useCallback((object) => {
+        console.log('[useBoardData] addObject called:', object.id, object.type);
         dispatch(addObjectOptimistically(object));
         sendUpdate('add_object', object);
     }, [dispatch, sendUpdate]);
