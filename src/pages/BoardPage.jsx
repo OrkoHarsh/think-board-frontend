@@ -68,6 +68,20 @@ const BoardPage = () => {
     const [activeTool, setActiveTool] = useState('select');
     const [selectedColor, setSelectedColor] = useState('#3B82F6');
     const [showIconPalette, setShowIconPalette] = useState(false);
+    const [animKey, setAnimKey] = useState(0);
+    const [isAnimating, setIsAnimating] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+
+    // Toggle play/pause for all animations
+    const toggleAnimation = useCallback(() => {
+        setIsAnimating(prev => {
+            if (!prev) {
+                // Starting: reset all components to trigger entrance animation
+                setAnimKey(k => k + 1);
+            }
+            return !prev;
+        });
+    }, []);
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(window.location.href).then(() => {
@@ -105,6 +119,184 @@ const BoardPage = () => {
         link.click();
         URL.revokeObjectURL(url);
         setIsExportOpen(false);
+    };
+
+    const handleExportVideo = async () => {
+        if (!canvasRef.current || isRecording) return;
+        setIsRecording(true);
+        setIsExportOpen(false);
+
+        const stage = canvasRef.current.getStage();
+        const layers = stage.getLayers();
+
+        // Create an offscreen canvas matching the stage size
+        const width = stage.width();
+        const height = stage.height();
+        const offscreen = document.createElement('canvas');
+        offscreen.width = width;
+        offscreen.height = height;
+        const ctx = offscreen.getContext('2d');
+
+        // Check supported MIME types
+        let mimeType = 'video/webm;codecs=vp9';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm;codecs=vp8';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm';
+        }
+
+        const stream = offscreen.captureStream(30);
+        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000 });
+        const chunks = [];
+
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `board-${boardId}-animation.webm`;
+            link.click();
+            URL.revokeObjectURL(url);
+            setIsRecording(false);
+            setIsAnimating(false);
+        };
+
+        // Trigger animations
+        setAnimKey(k => k + 1);
+        setIsAnimating(true);
+
+        // Wait for entrance animations to start
+        await new Promise(r => setTimeout(r, 300));
+        recorder.start();
+
+        // Render frames continuously while recording
+        const duration = 8000; // 8 seconds
+        const startTime = performance.now();
+
+        const renderFrame = () => {
+            const elapsed = performance.now() - startTime;
+            if (elapsed >= duration) {
+                recorder.stop();
+                return;
+            }
+
+            // Clear and re-render each Konva layer onto offscreen canvas
+            ctx.clearRect(0, 0, width, height);
+            layers.forEach(layer => {
+                // Get the layer's canvas and draw it
+                const layerCanvas = layer.getCanvas()._canvas;
+                ctx.drawImage(layerCanvas, 0, 0, width, height);
+            });
+
+            // Draw background (grid)
+            ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#111827' : '#f9fafb';
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillRect(0, 0, width, height);
+            ctx.globalCompositeOperation = 'source-over';
+
+            requestAnimationFrame(renderFrame);
+        };
+
+        renderFrame();
+    };
+
+    const handleExportGIF = async () => {
+        if (!canvasRef.current || isRecording) return;
+        setIsRecording(true);
+        setIsExportOpen(false);
+
+        const stage = canvasRef.current.getStage();
+        const layers = stage.getLayers();
+
+        const width = stage.width();
+        const height = stage.height();
+
+        // Minimal size - gifenc is extremely slow in JS
+        const scale = Math.min(1, 256 / width);
+        const gifWidth = Math.round(width * scale);
+        const gifHeight = Math.round(height * scale);
+
+        const offscreen = document.createElement('canvas');
+        offscreen.width = gifWidth;
+        offscreen.height = gifHeight;
+        const ctx = offscreen.getContext('2d');
+
+        // Trigger animations
+        setAnimKey(k => k + 1);
+        setIsAnimating(true);
+
+        // Wait for entrance animations to start
+        await new Promise(r => setTimeout(r, 500));
+
+        const duration = 2000; // 2 seconds only
+        const fps = 4; // 4fps = 8 frames total
+        const frameDelay = 1000 / fps;
+        const totalFrames = Math.floor(duration / frameDelay);
+
+        try {
+            const { quantize, encode } = await import('gifenc');
+
+            const frames = [];
+            const startTime = performance.now();
+            let frameCount = 0;
+
+            const captureFrame = () => {
+                const elapsed = performance.now() - startTime;
+                if (frameCount >= totalFrames || elapsed >= duration) {
+                    // Encode GIF (this is the slow part - will take 5-15 seconds)
+                    const palette = quantize(frames, 64); // 64 colors = much faster
+                    const gifBytes = encode(frames, palette, {
+                        delay: Math.round(frameDelay / 10),
+                        repeat: 0
+                    });
+
+                    const blob = new Blob([gifBytes], { type: 'image/gif' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `board-${boardId}-animation.gif`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    setIsRecording(false);
+                    setIsAnimating(false);
+                    return;
+                }
+
+                // Draw frame
+                ctx.clearRect(0, 0, gifWidth, gifHeight);
+                ctx.save();
+                ctx.scale(scale, scale);
+                layers.forEach(layer => {
+                    const layerCanvas = layer.getCanvas()._canvas;
+                    ctx.drawImage(layerCanvas, 0, 0);
+                });
+                ctx.restore();
+
+                // Background
+                ctx.globalCompositeOperation = 'destination-over';
+                ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#111827' : '#f9fafb';
+                ctx.fillRect(0, 0, gifWidth, gifHeight);
+                ctx.globalCompositeOperation = 'source-over';
+
+                // gifenc needs frames as {width, height, data}
+                const imageData = ctx.getImageData(0, 0, gifWidth, gifHeight);
+                frames.push({ width: gifWidth, height: gifHeight, data: imageData.data });
+                frameCount++;
+
+                // Next frame
+                const nextDelay = Math.max(10, frameCount * frameDelay - (performance.now() - startTime));
+                setTimeout(captureFrame, nextDelay);
+            };
+
+            captureFrame();
+        } catch (err) {
+            console.error('GIF export error:', err);
+            alert('Failed to generate GIF. Try the Video export instead.');
+            setIsRecording(false);
+            setIsAnimating(false);
+        }
     };
 
     if (status === 'loading') {
@@ -233,14 +425,31 @@ const BoardPage = () => {
                     <div className="relative">
                         <button
                             onClick={() => setIsExportOpen((v) => !v)}
-                            className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1.5"
+                            disabled={isRecording}
+                            className={`px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-xs font-medium flex items-center gap-1.5 ${
+                                isRecording
+                                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                            }`}
                         >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="7 10 12 15 17 10" />
-                                <line x1="12" y1="15" x2="12" y2="3" />
-                            </svg>
-                            Export
+                            {isRecording ? (
+                                <>
+                                    <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                                        <path d="M12 2a10 10 0 0 1 10 10" opacity="1"/>
+                                    </svg>
+                                    Recording...
+                                </>
+                            ) : (
+                                <>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    Export
+                                </>
+                            )}
                         </button>
 
                         {isExportOpen && (
@@ -248,7 +457,7 @@ const BoardPage = () => {
                                 {/* Backdrop */}
                                 <div className="fixed inset-0 z-30" onClick={() => setIsExportOpen(false)} />
                                 {/* Modal */}
-                                <div className="absolute right-0 top-10 z-40 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
+                                <div className="absolute right-0 top-10 z-40 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
                                     <button
                                         onClick={handleExportPNG}
                                         className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-left"
@@ -260,6 +469,31 @@ const BoardPage = () => {
                                         className="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-left"
                                     >
                                         Download JSON
+                                    </button>
+                                    <div className="border-t border-gray-200 dark:border-gray-700 my-2" />
+                                    <button
+                                        onClick={handleExportVideo}
+                                        className="w-full px-3 py-2 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-left flex items-center gap-2"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polygon points="23 7 16 12 23 17 23 7"/>
+                                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                                        </svg>
+                                        Download Video (8s)
+                                    </button>
+                                    <div className="border-t border-gray-200 dark:border-gray-700 my-2" />
+                                    <button
+                                        onClick={handleExportGIF}
+                                        className="w-full px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-left flex items-center gap-2"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                                            <line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/>
+                                            <line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/>
+                                            <line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>
+                                            <line x1="17" y1="17" x2="22" y2="17"/>
+                                        </svg>
+                                        Download GIF (5s)
                                     </button>
                                 </div>
                             </>
@@ -328,6 +562,8 @@ const BoardPage = () => {
                     onColorChange={setSelectedColor}
                     showIconPalette={showIconPalette}
                     onToggleIconPalette={() => setShowIconPalette((v) => !v)}
+                    onAnimateAll={toggleAnimation}
+                    isAnimating={isAnimating}
                 />
 
                 {showIconPalette && (
@@ -349,6 +585,8 @@ const BoardPage = () => {
                         setStagePos={setStagePos}
                         remoteCursors={presence}
                         onCursorMove={sendCursor}
+                        animKey={animKey}
+                        isAnimating={isAnimating}
                     />
                 </div>
             </div>
@@ -370,7 +608,7 @@ const BoardPage = () => {
                             }
                             const center = getCenterPos();
                             console.log('>>> Center position:', center);
-                            const objects = await mermaidToBoardObjects(mermaid, center.x - 300, center.y - 200);
+                            const objects = await mermaidToBoardObjects(mermaid, center.x, center.y);
                             console.log('>>> Generated objects:', objects.length, objects);
 
                             // Clear existing objects first

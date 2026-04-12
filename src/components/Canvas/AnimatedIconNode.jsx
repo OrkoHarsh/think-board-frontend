@@ -3,66 +3,80 @@
  *
  * Features:
  * - Staggered entrance animation (scale + fade)
- * - Subtle pulse glow ring (per-layer color)
+ * - Breathing pulse when isAnimating=true (±2.5% scale sine wave)
  * - Hover state (scale + shadow)
- * - Gradient border per architectural layer
+ * - Dark mode aware colors
  * - Clean label typography
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Group, Image as KonvaImage, Rect, Text, Circle } from 'react-konva';
+import { Group, Image as KonvaImage, Rect, Text } from 'react-konva';
 import { getIconUrl } from '../Icons/iconRegistry';
 
 const LABEL_HEIGHT = 16;
 const LABEL_GAP = 6;
 const ICON_PADDING = 8;
 
-// Layer-based gradient colors
-const LAYER_GRADIENTS = {
-    0: ['#60a5fa', '#3b82f6'],  // Entry: Blue
-    1: ['#a78bfa', '#8b5cf6'],  // Edge: Purple
-    2: ['#34d399', '#10b981'],  // Compute: Green
-    3: ['#f87171', '#ef4444'],  // Storage: Red
-    4: ['#fbbf24', '#f59e0b'],  // Observability: Amber
-};
-
-const LAYER_GLOW = {
-    0: 'rgba(96,165,250,0.15)',
-    1: 'rgba(167,139,250,0.15)',
-    2: 'rgba(52,211,153,0.15)',
-    3: 'rgba(248,113,113,0.15)',
-    4: 'rgba(251,191,36,0.15)',
-};
-
-// Detect layer from icon keyword
-function detectLayer(iconKey, label) {
-    const lower = (label || '').toLowerCase();
-    const icon = (iconKey || '').toLowerCase();
-
-    if (lower.includes('client') || lower.includes('user') || lower.includes('mobile') || lower.includes('browser')) return 0;
-    if (lower.includes('gateway') || lower.includes('load') || lower.includes('proxy') || lower.includes('nginx') || icon.includes('gate')) return 1;
-    if (lower.includes('service') || lower.includes('server') || lower.includes('auth') || lower.includes('api') || lower.includes('generator') || lower.includes('redirect') || lower.includes('dashboard') || lower.includes('admin') || lower.includes('management')) return 2;
-    if (lower.includes('database') || lower.includes('postgres') || lower.includes('mysql') || lower.includes('mongo') || lower.includes('cache') || lower.includes('redis') || lower.includes('queue') || lower.includes('kafka') || lower.includes('storage') || lower.includes('hash')) return 3;
-    if (lower.includes('monitor') || lower.includes('analytics') || lower.includes('logging') || lower.includes('grafana') || lower.includes('prometheus') || lower.includes('metric') || lower.includes('alert')) return 4;
-    return 2; // Default: compute layer
-}
-
-const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDelay = 0 }) => {
+const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDelay = 0, isAnimating = false }) => {
     const { id, x, y, width = 64, height = 64, iconKey, label } = iconProps;
 
     const [image, setImage] = useState(null);
     const [hovered, setHovered] = useState(false);
     const [animProgress, setAnimProgress] = useState(0);
-    const [glowRadius, setGlowRadius] = useState(0);
+    const [isDark, setIsDark] = useState(false);
+    const [breathScale, setBreathScale] = useState(1);
     const frameRef = useRef(null);
     const startTimeRef = useRef(null);
-    const glowFrameRef = useRef(null);
+    const breathFrameRef = useRef(null);
     const groupRef = useRef(null);
 
-    // Detect layer for color coding
-    const layer = detectLayer(iconKey, label);
-    const gradient = LAYER_GRADIENTS[layer] || LAYER_GRADIENTS[2];
-    const glowColor = LAYER_GLOW[layer] || LAYER_GLOW[2];
+    // Dark mode detection
+    useEffect(() => {
+        const checkDark = () => setIsDark(document.documentElement.classList.contains('dark'));
+        checkDark();
+        const observer = new MutationObserver(checkDark);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
+
+    // Continuous breathing pulse animation
+    useEffect(() => {
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReducedMotion || !isAnimating) {
+            setBreathScale(1);
+            return;
+        }
+
+        const period = 2500; // ms per cycle
+        const amplitude = 0.025; // ±2.5% scale
+        const startTime = performance.now() + pulseDelay * 100;
+
+        const animate = (time) => {
+            const elapsed = time - startTime;
+            if (elapsed < 0) {
+                breathFrameRef.current = requestAnimationFrame(animate);
+                return;
+            }
+            const t = (elapsed % period) / period;
+            // Smooth sine wave: 1.0 → 1.025 → 1.0
+            const pulse = Math.sin(t * Math.PI * 2) * 0.5 + 0.5;
+            setBreathScale(1 + amplitude * pulse);
+            breathFrameRef.current = requestAnimationFrame(animate);
+        };
+
+        breathFrameRef.current = requestAnimationFrame(animate);
+        return () => {
+            if (breathFrameRef.current) cancelAnimationFrame(breathFrameRef.current);
+            setBreathScale(1);
+        };
+    }, [isAnimating, pulseDelay]);
+
+    // Dark mode aware colors
+    const bgFill = hovered ? (isDark ? '#334155' : '#f8fafc') : (isDark ? '#1e293b' : '#ffffff');
+    const labelFill = isDark ? '#e2e8f0' : '#475569';
+    const placeholderFill = isDark ? '#334155' : '#f1f5f9';
+    const shadowBlurBase = isDark ? 14 : 8;
+    const shadowOpacityBase = isDark ? 0.25 : 0.08;
 
     // Load icon image
     useEffect(() => {
@@ -108,26 +122,6 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
         return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
     }, [pulseDelay]);
 
-    // Continuous subtle glow pulse
-    useEffect(() => {
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (prefersReducedMotion) return;
-
-        const baseRadius = Math.max(width, height) / 2 + 4;
-        const amplitude = 6;
-        const period = 4000;
-
-        const animate = (time) => {
-            const t = (time % period) / period;
-            const pulse = Math.sin(t * Math.PI * 2) * 0.5 + 0.5;
-            setGlowRadius(baseRadius + amplitude * pulse);
-            glowFrameRef.current = requestAnimationFrame(animate);
-        };
-
-        glowFrameRef.current = requestAnimationFrame(animate);
-        return () => { if (glowFrameRef.current) cancelAnimationFrame(glowFrameRef.current); };
-    }, [width, height]);
-
     const handleDragEnd = useCallback((e) => {
         onChange({ x: e.target.x(), y: e.target.y() });
     }, [onChange]);
@@ -147,9 +141,11 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
     const handleMouseLeave = useCallback(() => setHovered(false), []);
 
     const totalHeight = height + LABEL_GAP + LABEL_HEIGHT;
-    const scale = hovered ? 1.05 : animProgress;
-    const shadowBlur = hovered ? 20 : 8;
-    const shadowOpacity = hovered ? 0.2 : 0.08;
+    const entranceScale = hovered ? 1.05 : animProgress;
+    // Combine entrance scale with breathing pulse
+    const combinedScale = entranceScale * breathScale;
+    const shadowBlur = hovered ? 24 : shadowBlurBase;
+    const shadowOpacity = hovered ? 0.3 : shadowOpacityBase;
 
     return (
         <Group
@@ -157,8 +153,8 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
             id={id}
             x={x}
             y={y}
-            scaleX={scale}
-            scaleY={scale}
+            scaleX={combinedScale}
+            scaleY={combinedScale}
             offsetX={width / 2}
             offsetY={totalHeight / 2}
             draggable
@@ -169,15 +165,6 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >
-            {/* Glow ring */}
-            <Circle
-                x={width / 2}
-                y={height / 2}
-                radius={glowRadius}
-                fill={glowColor}
-                listening={false}
-            />
-
             {/* Hit area */}
             <Rect
                 width={width}
@@ -185,15 +172,13 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
                 fill="transparent"
             />
 
-            {/* Icon background with gradient border effect */}
+            {/* Icon background */}
             <Rect
                 width={width}
                 height={height}
-                fill={hovered ? '#f8fafc' : '#ffffff'}
+                fill={bgFill}
                 cornerRadius={12}
-                stroke={gradient[1]}
-                strokeWidth={hovered ? 2.5 : 1.5}
-                shadowColor={gradient[0]}
+                shadowColor={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}
                 shadowBlur={shadowBlur}
                 shadowOpacity={shadowOpacity}
                 shadowOffsetX={0}
@@ -215,7 +200,7 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
                     y={ICON_PADDING}
                     width={width - ICON_PADDING * 2}
                     height={height - ICON_PADDING * 2}
-                    fill="#f1f5f9"
+                    fill={placeholderFill}
                     cornerRadius={8}
                 />
             )}
@@ -230,7 +215,7 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
                 fontSize={10}
                 fontFamily="'Inter', system-ui, -apple-system, sans-serif"
                 fontStyle="500"
-                fill="#475569"
+                fill={labelFill}
                 align="center"
                 verticalAlign="middle"
                 ellipsis

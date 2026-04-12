@@ -1,5 +1,5 @@
 import { Rect, Circle, Ellipse, Line as KonvaLine, Text, Group } from 'react-konva';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 // Calculate text color based on fill luminance for contrast
 const getTextColor = (fill) => {
@@ -12,8 +12,57 @@ const getTextColor = (fill) => {
     return luminance > 0.5 ? '#1f2937' : '#ffffff';
 };
 
-const Shape = ({ shapeProps, isSelected, onSelect, onChange }) => {
+const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false, pulseDelay = 0 }) => {
     const groupRef = useRef();
+    const [breathScale, setBreathScale] = useState(1);
+    const [entranceScale, setEntranceScale] = useState(0);
+    const frameRef = useRef(null);
+    const startTimeRef = useRef(null);
+
+    // Entrance animation (scale + fade)
+    useEffect(() => {
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReducedMotion) { setEntranceScale(1); return; }
+
+        startTimeRef.current = performance.now();
+        const duration = 400;
+        const delay = pulseDelay * 100;
+
+        const animate = (time) => {
+            const elapsed = time - startTimeRef.current;
+            if (elapsed < delay) { frameRef.current = requestAnimationFrame(animate); return; }
+            const t = Math.min((elapsed - delay) / duration, 1);
+            const c1 = 1.70158, c3 = c1 + 1;
+            const eased = 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+            setEntranceScale(Math.min(eased, 1));
+            if (t < 1) frameRef.current = requestAnimationFrame(animate);
+        };
+        frameRef.current = requestAnimationFrame(animate);
+        return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+    }, [pulseDelay]);
+
+    // Breathing pulse animation
+    useEffect(() => {
+        if (!isAnimating) {
+            setBreathScale(1);
+            return;
+        }
+
+        const period = 2500;
+        const amplitude = 0.025;
+        const startTime = performance.now();
+
+        const animate = (time) => {
+            const elapsed = time - startTime;
+            const t = (elapsed % period) / period;
+            const pulse = Math.sin(t * Math.PI * 2) * 0.5 + 0.5;
+            setBreathScale(1 + amplitude * pulse);
+            requestAnimationFrame(animate);
+        };
+
+        const frameId = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(frameId);
+    }, [isAnimating]);
 
     const handleDragEnd = (e) => {
         onChange({
@@ -149,6 +198,10 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange }) => {
                 ref={groupRef}
                 x={x}
                 y={y}
+                scaleX={entranceScale * breathScale}
+                scaleY={entranceScale * breathScale}
+                offsetX={width / 2}
+                offsetY={height / 2}
                 draggable
                 onClick={onSelect}
                 onTap={onSelect}

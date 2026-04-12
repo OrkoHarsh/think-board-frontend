@@ -1,19 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
-import { Group, Circle, Rect, Text } from 'react-konva';
+import { Group, Rect, Text } from 'react-konva';
 
 /**
- * AnimatedRect: Rectangle shape with pulsing glow ring.
- * - Exact Excalidraw bounding box dimensions
- * - Dark mode: slate background, bright text
- * - Pulse glow: subtle, staggered
+ * AnimatedRect: Rectangle shape with breathing pulse animation.
+ * - Breathing pulse when isAnimating=true (±2.5% scale sine wave)
+ * - Dark mode aware colors
+ * - Clean, no border/glow
  */
 
-const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay = 0 }) => {
+const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay = 0, isAnimating = false }) => {
     const { id, x, y, width = 160, height = 80, fill, stroke, strokeWidth, text, label } = shapeProps;
-    const [pulseRadius, setPulseRadius] = useState(0);
-    const [pulseOpacity, setPulseOpacity] = useState(0);
     const [isDark, setIsDark] = useState(false);
-    const frameRef = useRef(null);
+    const [breathScale, setBreathScale] = useState(1);
+    const breathFrameRef = useRef(null);
     const startTimeRef = useRef(null);
 
     useEffect(() => {
@@ -24,25 +23,30 @@ const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay =
         return () => observer.disconnect();
     }, []);
 
+    // Breathing pulse animation
     useEffect(() => {
         const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (prefersReducedMotion) return;
-        startTimeRef.current = performance.now();
-        const baseRadius = Math.max(width, height) / 2 + 8;
-        const maxRadius = baseRadius + 4;
-        const amplitude = maxRadius - baseRadius;
-        const period = 7000;
+        if (prefersReducedMotion || !isAnimating) {
+            setBreathScale(1);
+            return;
+        }
+
+        const period = 2500;
+        const amplitude = 0.025;
+        const startTime = performance.now() + pulseDelay * 100;
+
         const animate = (time) => {
-            const elapsed = time - startTimeRef.current;
-            if (elapsed < pulseDelay * 1000) { frameRef.current = requestAnimationFrame(animate); return; }
-            const pulse = Math.sin(((elapsed % period) / period) * Math.PI);
-            setPulseRadius(baseRadius + amplitude * pulse);
-            setPulseOpacity(0.08 * pulse);
-            frameRef.current = requestAnimationFrame(animate);
+            const elapsed = time - startTime;
+            if (elapsed < 0) { breathFrameRef.current = requestAnimationFrame(animate); return; }
+            const t = (elapsed % period) / period;
+            const pulse = Math.sin(t * Math.PI * 2) * 0.5 + 0.5;
+            setBreathScale(1 + amplitude * pulse);
+            breathFrameRef.current = requestAnimationFrame(animate);
         };
-        frameRef.current = requestAnimationFrame(animate);
-        return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-    }, [width, height, pulseDelay]);
+
+        breathFrameRef.current = requestAnimationFrame(animate);
+        return () => { if (breathFrameRef.current) cancelAnimationFrame(breathFrameRef.current); setBreathScale(1); };
+    }, [isAnimating, pulseDelay]);
 
     const handleDragEnd = (e) => onChange({ x: e.target.x(), y: e.target.y() });
     const handleTransformEnd = (e) => {
@@ -56,20 +60,44 @@ const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay =
     const centerY = height / 2;
     const displayText = text || label || '';
     const fillColor = fill || (isDark ? '#1e293b' : '#ffffff');
-    const strokeColor = stroke || (isDark ? '#475569' : '#64748b');
     const textColor = isDark ? '#cbd5e1' : '#334155';
-    const pulseColor = isDark ? '#818cf8' : '#6366f1';
 
     return (
-        <Group id={id} x={x} y={y} draggable onClick={onSelect} onTap={onSelect} onDragEnd={handleDragEnd} onTransformEnd={handleTransformEnd}>
+        <Group
+            id={id}
+            x={x}
+            y={y}
+            scaleX={breathScale}
+            scaleY={breathScale}
+            offsetX={centerX}
+            offsetY={centerY}
+            draggable
+            onClick={onSelect}
+            onTap={onSelect}
+            onDragEnd={handleDragEnd}
+            onTransformEnd={handleTransformEnd}
+        >
             <Rect width={width} height={height} fill="transparent" />
-            {pulseRadius > 0 && (
-                <Circle x={centerX} y={centerY} radius={pulseRadius} fill={pulseColor} opacity={pulseOpacity} listening={false} />
-            )}
-            <Rect width={width} height={height} fill={fillColor} stroke={strokeColor} strokeWidth={strokeWidth || 2} cornerRadius={10}
-                shadowColor={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'} shadowBlur={8} shadowOffsetX={0} shadowOffsetY={2} />
-            <Text x={0} y={0} width={width} height={height} text={displayText} align="center" verticalAlign="middle"
-                fontSize={13} fontFamily="Inter, system-ui, -apple-system, sans-serif" fill={textColor} listening={false} />
+            <Rect
+                width={width}
+                height={height}
+                fill={fillColor}
+                cornerRadius={10}
+                shadowColor={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'}
+                shadowBlur={8}
+                shadowOffsetX={0}
+                shadowOffsetY={2}
+            />
+            <Text
+                x={0} y={0} width={width} height={height}
+                text={displayText}
+                align="center"
+                verticalAlign="middle"
+                fontSize={13}
+                fontFamily="Inter, system-ui, -apple-system, sans-serif"
+                fill={textColor}
+                listening={false}
+            />
         </Group>
     );
 };

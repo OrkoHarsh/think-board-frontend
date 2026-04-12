@@ -24,6 +24,8 @@ const CanvasStage = forwardRef(({
     setStagePos,
     remoteCursors = {},
     onCursorMove,
+    animKey = 0,
+    isAnimating = false,
 }, ref) => {
     const [selectedIds, setSelectedIds] = useState([]);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -54,6 +56,7 @@ const CanvasStage = forwardRef(({
     // Export methods via forwardRef
     useImperativeHandle(ref, () => ({
         exportImage: () => stageRef.current?.toDataURL({ pixelRatio: 2 }) || null,
+        getStage: () => stageRef.current,
     }), []);
 
     const isDrawMode = DRAW_TOOLS.includes(activeTool);
@@ -340,6 +343,7 @@ const CanvasStage = forwardRef(({
             <Stage
                 width={stageSize.width}
                 height={stageSize.height}
+                style={{ cursor: 'none' }}
                 onMouseDown={handleMouseDown}
                 onTouchStart={handleMouseDown}
                 onMouseMove={handleMouseMove}
@@ -359,18 +363,18 @@ const CanvasStage = forwardRef(({
                 <Layer>
                     {(objects || []).map((obj, idx) => {
                         const isSelected = selectedIds.includes(obj.id);
-                        
+
                         // Detect if this is an AI-generated diagram object (uses animated components)
                         // AI objects have IDs like "icon-A", "node-B", "arrow-0"
                         const isDiagramObject = obj.id.startsWith('icon-') || obj.id.startsWith('node-') || obj.id.startsWith('arrow-');
-                        
-                        // Stagger pulse animation timing for diagram objects
-                        const pulseDelay = isDiagramObject ? idx * 0.15 : 0;
+
+                        // Stagger pulse animation timing for all objects
+                        const pulseDelay = idx * 0.08;
 
                         if (obj.type === 'sticky') {
                             return (
                                 <StickyNote
-                                    key={obj.id}
+                                    key={`${obj.id}-sticky-${animKey}`}
                                     noteProps={obj}
                                     isSelected={isSelected}
                                     onSelect={(e) => handleObjSelect(obj.id, e)}
@@ -379,21 +383,22 @@ const CanvasStage = forwardRef(({
                             );
                         }
                         if (obj.type === 'line' || obj.type === 'arrow' || obj.type === 'freehand') {
-                            // Use AnimatedConnector for AI-generated arrows, regular Connector for user-drawn
-                            if (isDiagramObject && obj.type === 'arrow') {
+                            // Use AnimatedConnector for arrows (supports particles), Line for freehand/line
+                            if (obj.type === 'arrow') {
                                 return (
                                     <AnimatedConnector
-                                        key={obj.id}
+                                        key={`${obj.id}-arrow-${animKey}`}
                                         connectorProps={obj}
                                         isSelected={isSelected}
                                         onSelect={(e) => handleObjSelect(obj.id, e)}
                                         onChange={(a) => onUpdate(obj.id, a)}
+                                        isAnimating={isAnimating}
                                     />
                                 );
                             }
                             return (
                                 <Connector
-                                    key={obj.id}
+                                    key={`${obj.id}-conn-${animKey}`}
                                     connectorProps={obj}
                                     isSelected={isSelected}
                                     onSelect={(e) => handleObjSelect(obj.id, e)}
@@ -404,12 +409,13 @@ const CanvasStage = forwardRef(({
                         if (obj.type === 'icon') {
                             return (
                                 <AnimatedIconNode
-                                    key={obj.id}
+                                    key={`${obj.id}-icon-${animKey}`}
                                     iconProps={obj}
                                     isSelected={isSelected}
                                     onSelect={(e) => handleObjSelect(obj.id, e)}
                                     onChange={(a) => onUpdate(obj.id, a)}
-                                    pulseDelay={isDiagramObject ? idx * 0.12 : 0}
+                                    pulseDelay={pulseDelay}
+                                    isAnimating={isAnimating}
                                 />
                             );
                         }
@@ -417,22 +423,25 @@ const CanvasStage = forwardRef(({
                         if (isDiagramObject && obj.type === 'rect') {
                             return (
                                 <AnimatedRect
-                                    key={obj.id}
+                                    key={`${obj.id}-rect-${animKey}`}
                                     shapeProps={obj}
                                     isSelected={isSelected}
                                     onSelect={(e) => handleObjSelect(obj.id, e)}
                                     onChange={(a) => onUpdate(obj.id, a)}
                                     pulseDelay={pulseDelay}
+                                    isAnimating={isAnimating}
                                 />
                             );
                         }
                         return (
                             <Shape
-                                key={obj.id}
+                                key={`${obj.id}-shape-${animKey}`}
                                 shapeProps={obj}
                                 isSelected={isSelected}
                                 onSelect={(e) => handleObjSelect(obj.id, e)}
                                 onChange={(a) => onUpdate(obj.id, a)}
+                                isAnimating={isAnimating}
+                                pulseDelay={pulseDelay}
                             />
                         );
                     })}
