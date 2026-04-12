@@ -394,6 +394,7 @@ const BoardPage = () => {
                         className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1.5"
                     >
                         <span>✨</span> Ask ThinkBoard
+                        <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300 rounded uppercase tracking-wide">Beta</span>
                     </button>
 
                     {/* Dark Mode Toggle */}

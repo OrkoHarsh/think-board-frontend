@@ -16,7 +16,7 @@ import Konva from 'konva';
 const PARTICLE_COUNT = 3;
 const PARTICLE_RADIUS = 2.5;
 const PARTICLE_SPEED = 0.012; // 3x faster: one full loop in ~1.3 seconds
-const PARTICLE_COLOR_LIGHT = '#38bdf8';  // Sky blue
+const PARTICLE_COLOR_LIGHT = '#0284c7';  // Darker sky blue for visibility on light bg
 const PARTICLE_COLOR_DARK = '#22d3ee';   // Cyan
 
 const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isAnimating = false }) => {

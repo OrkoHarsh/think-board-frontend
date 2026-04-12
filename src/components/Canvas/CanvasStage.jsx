@@ -355,7 +355,7 @@ const CanvasStage = forwardRef(({
                 scaleY={stageScale}
                 x={stagePos.x}
                 y={stagePos.y}
-                draggable={!isDrawMode && !isDraggingSelect}
+                draggable={isPanMode}
                 onDragEnd={(e) => {
                     if (e.target === stageRef.current) setStagePos({ x: e.target.x(), y: e.target.y() });
                 }}

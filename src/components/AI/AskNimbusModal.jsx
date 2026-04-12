@@ -15,7 +15,7 @@ const AskNimbusModal = ({ isOpen, onClose, onGenerate }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-indigo-600">✨ Ask ThinkBoard AI</h3>
+                    <h3 className="text-lg font-bold text-indigo-600 flex items-center gap-2">✨ Ask ThinkBoard AI <span className="text-[10px] font-bold bg-indigo-100 text-indigo-600 rounded uppercase tracking-wide px-1.5 py-0.5">Beta</span></h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         ✕
                     </button>
