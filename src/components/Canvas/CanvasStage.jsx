@@ -343,7 +343,6 @@ const CanvasStage = forwardRef(({
             <Stage
                 width={stageSize.width}
                 height={stageSize.height}
-                style={{ cursor: 'none' }}
                 onMouseDown={handleMouseDown}
                 onTouchStart={handleMouseDown}
                 onMouseMove={handleMouseMove}
