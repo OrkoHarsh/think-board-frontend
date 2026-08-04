@@ -147,6 +147,18 @@ export const boardApi = {
         const response = await api.delete(`/boards/${boardId}`);
         return { data: response.data.data };
     },
+    shareBoard: async (boardId, { username, role }) => {
+        const response = await api.post(`/boards/${boardId}/share`, { username, role });
+        return { data: response.data.data };
+    },
+    listMembers: async (boardId) => {
+        const response = await api.get(`/boards/${boardId}/members`);
+        return { data: response.data.data };
+    },
+    removeMember: async (boardId, userId) => {
+        const response = await api.delete(`/boards/${boardId}/members/${userId}`);
+        return { data: response.data.data };
+    },
     batchUpdateObjects: async (boardId, objects) => {
         const response = await api.post(`/boards/${boardId}/objects/batch`, { objects });
         return { data: response.data.data };

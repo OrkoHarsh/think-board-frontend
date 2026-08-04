@@ -88,6 +88,7 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
     const handleDblClick = () => {
         const stage = groupRef.current.getStage();
         const stageBox = stage.container().getBoundingClientRect();
+        const scale = stage.scaleX() || 1;
 
         // Use getAbsoluteTransform for robust pixel-perfect positioning
         const transform = groupRef.current.getAbsoluteTransform().copy();
@@ -100,6 +101,12 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
         const areaHeight = bottomRight.y - topLeft.y;
 
         const isRound = shapeProps.type === 'circle' || shapeProps.type === 'ellipse';
+        const isTextType = shapeProps.type === 'text';
+        const fontSize = (shapeProps.fontSize || (isTextType ? 20 : 14)) * scale;
+        const fontFamily = shapeProps.fontFamily || 'Inter, system-ui, sans-serif';
+        const fontStyle = shapeProps.fontStyle || 'normal';
+        const align = shapeProps.align || 'center';
+        const textDecoration = shapeProps.textDecoration || '';
 
         const textarea = document.createElement('textarea');
         document.body.appendChild(textarea);
@@ -110,7 +117,7 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
             left: `${left}px`,
             width: `${areaWidth}px`,
             height: `${areaHeight}px`,
-            fontSize: `${14 * (stage.scaleX() || 1)}px`,
+            fontSize: `${fontSize}px`,
             border: '2px solid #6366f1',
             borderRadius: isRound ? '50%' : '4px',
             padding: '4px',
@@ -121,8 +128,11 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
             resize: 'none',
             color: '#1f2937',
             zIndex: '1000',
-            textAlign: 'center',
-            fontFamily: 'sans-serif',
+            textAlign: align,
+            fontFamily,
+            fontWeight: fontStyle.includes('bold') ? 'bold' : 'normal',
+            fontStyle: fontStyle.includes('italic') ? 'italic' : 'normal',
+            textDecoration: textDecoration || 'none',
             lineHeight: '1.3',
             boxSizing: 'border-box',
         });
@@ -187,8 +197,12 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
     };
 
     const isTextType = type === 'text';
-    const textColor = getTextColor(fill);
-    const textSize = isTextType ? 20 : 14;
+    const textColor = isTextType ? (fill && fill !== 'transparent' ? fill : '#1f2937') : getTextColor(fill);
+    const textSize = shapeProps.fontSize || (isTextType ? 20 : 14);
+    const fontFamily = shapeProps.fontFamily || 'Inter, system-ui, sans-serif';
+    const fontStyle = shapeProps.fontStyle || 'normal';
+    const textDecoration = shapeProps.textDecoration || '';
+    const align = shapeProps.align || 'center';
     const displayText = text || (text === '' ? '' : 'Double-click to edit');
 
     return (
@@ -212,15 +226,18 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
             >
                 {renderShape()}
                 <Text
+                    key={`t-${fontFamily}-${textSize}-${align}-${fontStyle}-${textDecoration}`}
                     x={0}
                     y={0}
                     width={width}
                     height={height}
                     text={displayText}
-                    align="center"
+                    align={align}
                     verticalAlign="middle"
                     fontSize={textSize}
-                    fontFamily="sans-serif"
+                    fontFamily={fontFamily}
+                    fontStyle={fontStyle}
+                    textDecoration={textDecoration}
                     fill={textColor}
                     listening={false}
                     wrap="word"

@@ -1,15 +1,170 @@
-import { useState, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Stage, Layer, Line, Arrow as KonvaArrow, Rect as KonvaRect, Transformer, Group, Path, Rect as KonvaRectLabel, Text as KonvaText, Circle, Text } from 'react-konva';
+import { useState, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle, useCallback, memo, useMemo } from 'react';
+import { Stage, Layer, Line, Arrow as KonvaArrow, Rect as KonvaRect, Transformer, Group, Path, Rect as KonvaRectLabel, Text as KonvaText } from 'react-konva';
 import Shape from './Shape';
 import StickyNote from './StickyNote';
 import Connector from './Connector';
-import IconNode from './IconNode';
 import AnimatedConnector from './AnimatedConnector';
 import AnimatedIconNode from './AnimatedIconNode';
 import AnimatedRect from './AnimatedRect';
+import TextFormatBar, { isTextCapable } from './TextFormatBar';
+import ConnectorStyleBar from './ConnectorStyleBar';
 import { generateId } from '../../utils/helpers';
 
 const DRAW_TOOLS = ['line', 'arrow', 'freehand'];
+
+/** Objects + selection UI — memoized so remote cursor ticks don't reset Konva drag positions */
+const ObjectsLayer = memo(function ObjectsLayer({
+    objects,
+    selectedIds,
+    animKey,
+    isAnimating,
+    stageScale,
+    selBox,
+    drawPreview,
+    onObjSelect,
+    onUpdate,
+    trRef,
+}) {
+    return (
+        <Layer>
+            {(objects || []).map((obj, idx) => {
+                const isSelected = selectedIds.includes(obj.id);
+                const isDiagramObject = obj.id.startsWith('icon-') || obj.id.startsWith('node-') || obj.id.startsWith('arrow-');
+                const pulseDelay = idx * 0.08;
+
+                if (obj.type === 'sticky') {
+                    return (
+                        <StickyNote
+                            key={`${obj.id}-sticky-${animKey}`}
+                            noteProps={obj}
+                            isSelected={isSelected}
+                            onSelect={(e) => onObjSelect(obj.id, e)}
+                            onChange={(a) => onUpdate(obj.id, a)}
+                        />
+                    );
+                }
+                if (obj.type === 'line' || obj.type === 'arrow' || obj.type === 'freehand') {
+                    if (obj.type === 'arrow') {
+                        return (
+                            <AnimatedConnector
+                                key={`${obj.id}-arrow-${animKey}`}
+                                connectorProps={obj}
+                                isSelected={isSelected}
+                                onSelect={(e) => onObjSelect(obj.id, e)}
+                                onChange={(a) => onUpdate(obj.id, a)}
+                                isAnimating={isAnimating}
+                            />
+                        );
+                    }
+                    return (
+                        <Connector
+                            key={`${obj.id}-conn-${animKey}`}
+                            connectorProps={obj}
+                            isSelected={isSelected}
+                            onSelect={(e) => onObjSelect(obj.id, e)}
+                            onChange={(a) => onUpdate(obj.id, a)}
+                        />
+                    );
+                }
+                if (obj.type === 'icon') {
+                    return (
+                        <AnimatedIconNode
+                            key={`${obj.id}-icon-${animKey}`}
+                            iconProps={obj}
+                            isSelected={isSelected}
+                            onSelect={(e) => onObjSelect(obj.id, e)}
+                            onChange={(a) => onUpdate(obj.id, a)}
+                            pulseDelay={pulseDelay}
+                            isAnimating={isAnimating}
+                            diagramMode={obj.id.startsWith('ai-') || obj.id.startsWith('icon-')}
+                        />
+                    );
+                }
+                if (isDiagramObject && obj.type === 'rect') {
+                    return (
+                        <AnimatedRect
+                            key={`${obj.id}-rect-${animKey}`}
+                            shapeProps={obj}
+                            isSelected={isSelected}
+                            onSelect={(e) => onObjSelect(obj.id, e)}
+                            onChange={(a) => onUpdate(obj.id, a)}
+                            pulseDelay={pulseDelay}
+                            isAnimating={isAnimating}
+                        />
+                    );
+                }
+                return (
+                    <Shape
+                        key={`${obj.id}-shape-${animKey}`}
+                        shapeProps={obj}
+                        isSelected={isSelected}
+                        onSelect={(e) => onObjSelect(obj.id, e)}
+                        onChange={(a) => onUpdate(obj.id, a)}
+                        isAnimating={isAnimating}
+                        pulseDelay={pulseDelay}
+                    />
+                );
+            })}
+
+            <Transformer
+                ref={trRef}
+                boundBoxFunc={(oldBox, newBox) =>
+                    newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
+                }
+            />
+
+            {selBox && selBox.w > 2 && selBox.h > 2 && (
+                <KonvaRect
+                    x={selBox.x} y={selBox.y}
+                    width={selBox.w} height={selBox.h}
+                    fill="rgba(99,102,241,0.08)"
+                    stroke="#6366f1"
+                    strokeWidth={1 / stageScale}
+                    dash={[4 / stageScale, 3 / stageScale]}
+                    listening={false}
+                />
+            )}
+            {drawPreview}
+        </Layer>
+    );
+});
+
+/** Remote collaborator cursors — updates independently of object layer */
+const CursorsLayer = memo(function CursorsLayer({ remoteCursors, stageScale, stagePos }) {
+    return (
+        <Layer listening={false}>
+            {Object.values(remoteCursors).map(({ userId, name, color, x, y }) => {
+                const sx = x * stageScale + stagePos.x;
+                const sy = y * stageScale + stagePos.y;
+                const labelW = Math.max(40, name.length * 7 + 12);
+                return (
+                    <Group key={userId} x={sx} y={sy} listening={false}>
+                        <Path
+                            data="M0,0 L0,18 L5,13 L8,20 L10,19 L7,12 L12,12 Z"
+                            fill={color}
+                            stroke="white"
+                            strokeWidth={1}
+                        />
+                        <KonvaRectLabel
+                            x={10} y={14}
+                            width={labelW} height={18}
+                            fill={color}
+                            cornerRadius={3}
+                        />
+                        <KonvaText
+                            x={14} y={18}
+                            text={name}
+                            fontSize={11}
+                            fontFamily="Inter, system-ui, sans-serif"
+                            fill="white"
+                            listening={false}
+                        />
+                    </Group>
+                );
+            })}
+        </Layer>
+    );
+});
 
 const CanvasStage = forwardRef(({
     objects,
@@ -18,6 +173,12 @@ const CanvasStage = forwardRef(({
     onDelete,
     onAdd,
     activeTool,
+    connectorDefaults = {
+        lineStyle: 'solid',
+        startMarker: 'none',
+        endMarker: 'none',
+        strokeWidth: 2,
+    },
     stageScale,
     stagePos,
     setStageScale,
@@ -167,23 +328,23 @@ const CanvasStage = forwardRef(({
         return { x: obj.x || 0, y: obj.y || 0, width: obj.width || 150, height: obj.height || 150 };
     };
 
-    const handleObjSelect = (objId, e) => {
+    const handleObjSelect = useCallback((objId, e) => {
         if (activeTool === 'eraser') { onDelete(objId); return; }
 
         // Alt+click: cycle through overlapping objects
         if (e?.evt?.altKey) {
             const stage = stageRef.current;
             const pointerPos = stage.getPointerPosition();
-            const pos = getWorldPos(pointerPos);
+            const pos = {
+                x: (pointerPos.x - stagePos.x) / stageScale,
+                y: (pointerPos.y - stagePos.y) / stageScale,
+            };
 
-            // Check if this is the same click position as before
             const isSamePosClick = lastClickPosRef.current &&
                 Math.abs(lastClickPosRef.current.x - pos.x) < 10 &&
                 Math.abs(lastClickPosRef.current.y - pos.y) < 10;
 
-            // Find all objects at or near this position
             const overlappingIds = objects
-                .map((obj, idx) => ({ ...obj, idx }))
                 .filter(obj => {
                     const bbox = getObjBBox(obj);
                     return pos.x >= bbox.x && pos.x <= bbox.x + bbox.width &&
@@ -192,11 +353,9 @@ const CanvasStage = forwardRef(({
                 .map(obj => obj.id);
 
             if (overlappingIds.length > 1) {
-                // Reset cycle index if different position
                 if (!isSamePosClick) {
                     cycleIndexRef.current = 0;
                 }
-                // Find current selection in overlapping list
                 const currentIdx = overlappingIds.indexOf(selectedIds[0]);
                 const nextIdx = (currentIdx + 1) % overlappingIds.length;
                 cycleIndexRef.current = nextIdx;
@@ -211,7 +370,6 @@ const CanvasStage = forwardRef(({
             return;
         }
 
-        // Reset cycle state on regular click
         lastClickPosRef.current = null;
         cycleIndexRef.current = 0;
 
@@ -223,7 +381,7 @@ const CanvasStage = forwardRef(({
             setSelectedIds([objId]);
         }
         onSelect(objId);
-    };
+    }, [activeTool, onDelete, onSelect, objects, selectedIds, stagePos.x, stagePos.y, stageScale]);
 
     const handleMouseDown = (e) => {
         const clickedOnEmpty = e.target === e.target.getStage();
@@ -275,7 +433,33 @@ const CanvasStage = forwardRef(({
         if (isDrawing) {
             setIsDrawing(false);
             if (drawPoints.length >= 4) {
-                onAdd({ id: generateId(), type: activeTool, points: [...drawPoints], x: 0, y: 0, stroke: '#374151', strokeWidth: 2 });
+                const base = {
+                    id: generateId(),
+                    type: activeTool,
+                    points: [...drawPoints],
+                    x: 0,
+                    y: 0,
+                    stroke: '#374151',
+                    strokeWidth: connectorDefaults.strokeWidth || 2,
+                    lineStyle: connectorDefaults.lineStyle || 'solid',
+                    startMarker: connectorDefaults.startMarker || 'none',
+                    endMarker:
+                        connectorDefaults.endMarker ||
+                        (activeTool === 'arrow' ? 'arrow' : 'none'),
+                };
+                if (activeTool === 'arrow' || activeTool === 'line') {
+                    onAdd(base);
+                } else {
+                    onAdd({
+                        id: base.id,
+                        type: activeTool,
+                        points: base.points,
+                        x: 0,
+                        y: 0,
+                        stroke: base.stroke,
+                        strokeWidth: base.strokeWidth,
+                    });
+                }
             }
             setDrawPoints([]);
             return;
@@ -318,10 +502,65 @@ const CanvasStage = forwardRef(({
     const renderDrawPreview = () => {
         if (!isDrawing || drawPoints.length < 4) return null;
         const previewProps = { points: drawPoints, stroke: '#6366f1', strokeWidth: 2, dash: [6, 3], listening: false };
-        if (activeTool === 'arrow') return <KonvaArrow {...previewProps} pointerLength={10} pointerWidth={10} fill="#6366f1" />;
+        if (activeTool === 'arrow') {
+            return (
+                <KonvaArrow
+                    points={drawPoints}
+                    stroke="#6366f1"
+                    fill="#6366f1"
+                    strokeWidth={2}
+                    pointerLength={10}
+                    pointerWidth={10}
+                    dash={[6, 3]}
+                    listening={false}
+                />
+            );
+        }
         if (activeTool === 'freehand') return <Line {...previewProps} tension={0.5} lineCap="round" lineJoin="round" dash={undefined} opacity={0.6} />;
         return <Line {...previewProps} />;
     };
+
+    const selectedObject = useMemo(() => {
+        if (selectedIds.length !== 1) return null;
+        return objects.find((o) => o.id === selectedIds[0]) || null;
+    }, [selectedIds, objects]);
+
+    const selectionAnchor = useMemo(() => {
+        if (!selectedObject || !containerRef.current) return null;
+        const rect = containerRef.current.getBoundingClientRect();
+        const obj = selectedObject;
+
+        let worldX;
+        let worldY;
+        let worldW;
+        let worldH;
+
+        if (obj.type === 'line' || obj.type === 'arrow' || obj.type === 'freehand') {
+            const b = getObjBBox(obj);
+            worldX = b.x;
+            worldY = b.y;
+            worldW = Math.max(b.width, 1);
+            worldH = Math.max(b.height, 1);
+        } else if (obj.type === 'sticky' || obj.type === 'icon') {
+            worldX = obj.x || 0;
+            worldY = obj.y || 0;
+            worldW = obj.width || 150;
+            worldH = obj.height || 150;
+        } else {
+            // Shape uses center origin via offsetX/offsetY
+            worldW = obj.width || 100;
+            worldH = obj.height || 100;
+            worldX = (obj.x || 0) - worldW / 2;
+            worldY = (obj.y || 0) - worldH / 2;
+        }
+
+        return {
+            top: rect.top + worldY * stageScale + stagePos.y,
+            left: rect.left + worldX * stageScale + stagePos.x,
+            width: worldW * stageScale,
+            height: worldH * stageScale,
+        };
+    }, [selectedObject, stageScale, stagePos.x, stagePos.y, stageSize.width, stageSize.height]);
 
     const getCursor = () => {
         if (isDrawMode || isDraggingSelect) return 'crosshair';
@@ -360,149 +599,40 @@ const CanvasStage = forwardRef(({
                     if (e.target === stageRef.current) setStagePos({ x: e.target.x(), y: e.target.y() });
                 }}
             >
-                <Layer>
-                    {(objects || []).map((obj, idx) => {
-                        const isSelected = selectedIds.includes(obj.id);
+                <ObjectsLayer
+                    objects={objects}
+                    selectedIds={selectedIds}
+                    animKey={animKey}
+                    isAnimating={isAnimating}
+                    stageScale={stageScale}
+                    selBox={selBox}
+                    drawPreview={renderDrawPreview()}
+                    onObjSelect={handleObjSelect}
+                    onUpdate={onUpdate}
+                    trRef={trRef}
+                />
 
-                        // Detect if this is an AI-generated diagram object (uses animated components)
-                        // AI objects have IDs like "icon-A", "node-B", "arrow-0"
-                        const isDiagramObject = obj.id.startsWith('icon-') || obj.id.startsWith('node-') || obj.id.startsWith('arrow-');
-
-                        // Stagger pulse animation timing for all objects
-                        const pulseDelay = idx * 0.08;
-
-                        if (obj.type === 'sticky') {
-                            return (
-                                <StickyNote
-                                    key={`${obj.id}-sticky-${animKey}`}
-                                    noteProps={obj}
-                                    isSelected={isSelected}
-                                    onSelect={(e) => handleObjSelect(obj.id, e)}
-                                    onChange={(a) => onUpdate(obj.id, a)}
-                                />
-                            );
-                        }
-                        if (obj.type === 'line' || obj.type === 'arrow' || obj.type === 'freehand') {
-                            // Use AnimatedConnector for arrows (supports particles), Line for freehand/line
-                            if (obj.type === 'arrow') {
-                                return (
-                                    <AnimatedConnector
-                                        key={`${obj.id}-arrow-${animKey}`}
-                                        connectorProps={obj}
-                                        isSelected={isSelected}
-                                        onSelect={(e) => handleObjSelect(obj.id, e)}
-                                        onChange={(a) => onUpdate(obj.id, a)}
-                                        isAnimating={isAnimating}
-                                    />
-                                );
-                            }
-                            return (
-                                <Connector
-                                    key={`${obj.id}-conn-${animKey}`}
-                                    connectorProps={obj}
-                                    isSelected={isSelected}
-                                    onSelect={(e) => handleObjSelect(obj.id, e)}
-                                    onChange={(a) => onUpdate(obj.id, a)}
-                                />
-                            );
-                        }
-                        if (obj.type === 'icon') {
-                            return (
-                                <AnimatedIconNode
-                                    key={`${obj.id}-icon-${animKey}`}
-                                    iconProps={obj}
-                                    isSelected={isSelected}
-                                    onSelect={(e) => handleObjSelect(obj.id, e)}
-                                    onChange={(a) => onUpdate(obj.id, a)}
-                                    pulseDelay={pulseDelay}
-                                    isAnimating={isAnimating}
-                                />
-                            );
-                        }
-                        // Default: rect/diamond/circle/etc.
-                        if (isDiagramObject && obj.type === 'rect') {
-                            return (
-                                <AnimatedRect
-                                    key={`${obj.id}-rect-${animKey}`}
-                                    shapeProps={obj}
-                                    isSelected={isSelected}
-                                    onSelect={(e) => handleObjSelect(obj.id, e)}
-                                    onChange={(a) => onUpdate(obj.id, a)}
-                                    pulseDelay={pulseDelay}
-                                    isAnimating={isAnimating}
-                                />
-                            );
-                        }
-                        return (
-                            <Shape
-                                key={`${obj.id}-shape-${animKey}`}
-                                shapeProps={obj}
-                                isSelected={isSelected}
-                                onSelect={(e) => handleObjSelect(obj.id, e)}
-                                onChange={(a) => onUpdate(obj.id, a)}
-                                isAnimating={isAnimating}
-                                pulseDelay={pulseDelay}
-                            />
-                        );
-                    })}
-
-                    {/* Shared Transformer for all selected nodes */}
-                    <Transformer
-                        ref={trRef}
-                        boundBoxFunc={(oldBox, newBox) =>
-                            newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
-                        }
-                    />
-
-                    {/* Rubber-band selection rectangle */}
-                    {selBox && selBox.w > 2 && selBox.h > 2 && (
-                        <KonvaRect
-                            x={selBox.x} y={selBox.y}
-                            width={selBox.w} height={selBox.h}
-                            fill="rgba(99,102,241,0.08)"
-                            stroke="#6366f1"
-                            strokeWidth={1 / stageScale}
-                            dash={[4 / stageScale, 3 / stageScale]}
-                            listening={false}
-                        />
-                    )}
-                    {renderDrawPreview()}
-                </Layer>
-
-                {/* Remote cursors — separate non-interactive layer, no scale applied */}
-                <Layer listening={false}>
-                    {Object.values(remoteCursors).map(({ userId, name, color, x, y }) => {
-                        // Convert world coords → screen coords
-                        const sx = x * stageScale + stagePos.x;
-                        const sy = y * stageScale + stagePos.y;
-                        const labelW = Math.max(40, name.length * 7 + 12);
-                        return (
-                            <Group key={userId} x={sx} y={sy} listening={false}>
-                                <Path
-                                    data="M0,0 L0,18 L5,13 L8,20 L10,19 L7,12 L12,12 Z"
-                                    fill={color}
-                                    stroke="white"
-                                    strokeWidth={1}
-                                />
-                                <KonvaRectLabel
-                                    x={10} y={14}
-                                    width={labelW} height={18}
-                                    fill={color}
-                                    cornerRadius={3}
-                                />
-                                <KonvaText
-                                    x={14} y={18}
-                                    text={name}
-                                    fontSize={11}
-                                    fontFamily="Inter, system-ui, sans-serif"
-                                    fill="white"
-                                    listening={false}
-                                />
-                            </Group>
-                        );
-                    })}
-                </Layer>
+                <CursorsLayer
+                    remoteCursors={remoteCursors}
+                    stageScale={stageScale}
+                    stagePos={stagePos}
+                />
             </Stage>
+
+            {selectedObject && isTextCapable(selectedObject) && selectionAnchor && (
+                <TextFormatBar
+                    object={selectedObject}
+                    anchor={selectionAnchor}
+                    onChange={(patch) => onUpdate(selectedObject.id, patch)}
+                />
+            )}
+            {selectedObject && (selectedObject.type === 'line' || selectedObject.type === 'arrow') && selectionAnchor && (
+                <ConnectorStyleBar
+                    object={selectedObject}
+                    anchor={selectionAnchor}
+                    onChange={(patch) => onUpdate(selectedObject.id, patch)}
+                />
+            )}
         </div>
     );
 });

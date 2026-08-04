@@ -17,12 +17,15 @@ const LABEL_HEIGHT = 16;
 const LABEL_GAP = 6;
 const ICON_PADDING = 8;
 
-const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDelay = 0, isAnimating = false }) => {
+const getTotalHeight = (iconHeight) => iconHeight + LABEL_GAP + LABEL_HEIGHT;
+
+const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDelay = 0, isAnimating = false, diagramMode = false }) => {
     const { id, x, y, width = 64, height = 64, iconKey, label } = iconProps;
+    const totalHeight = getTotalHeight(height);
 
     const [image, setImage] = useState(null);
     const [hovered, setHovered] = useState(false);
-    const [animProgress, setAnimProgress] = useState(0);
+    const [animProgress, setAnimProgress] = useState(diagramMode ? 1 : 0);
     const [isDark, setIsDark] = useState(false);
     const [breathScale, setBreathScale] = useState(1);
     const frameRef = useRef(null);
@@ -93,6 +96,10 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
 
     // Entrance animation
     useEffect(() => {
+        if (diagramMode) {
+            setAnimProgress(1);
+            return;
+        }
         const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (prefersReducedMotion) {
             setAnimProgress(1);
@@ -120,27 +127,35 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
 
         frameRef.current = requestAnimationFrame(animate);
         return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-    }, [pulseDelay]);
+    }, [pulseDelay, diagramMode]);
 
     const handleDragEnd = useCallback((e) => {
-        onChange({ x: e.target.x(), y: e.target.y() });
-    }, [onChange]);
+        const node = e.target;
+        const nodeTotalHeight = getTotalHeight(height);
+        onChange({
+            x: node.x() - width / 2,
+            y: node.y() - nodeTotalHeight / 2,
+        });
+    }, [onChange, width, height]);
 
     const handleTransformEnd = useCallback((e) => {
         const node = e.target;
         const sx = node.scaleX(), sy = node.scaleY();
         node.scaleX(1); node.scaleY(1);
+        const nextWidth = Math.max(40, width * sx);
+        const nextHeight = Math.max(40, height * sy);
+        const nextTotalHeight = nextHeight + LABEL_GAP + LABEL_HEIGHT;
         onChange({
-            x: node.x(), y: node.y(),
-            width: Math.max(40, width * sx),
-            height: Math.max(40, height * sy),
+            x: node.x() - nextWidth / 2,
+            y: node.y() - nextTotalHeight / 2,
+            width: nextWidth,
+            height: nextHeight,
         });
     }, [width, height, onChange]);
 
     const handleMouseEnter = useCallback(() => setHovered(true), []);
     const handleMouseLeave = useCallback(() => setHovered(false), []);
 
-    const totalHeight = height + LABEL_GAP + LABEL_HEIGHT;
     const entranceScale = hovered ? 1.05 : animProgress;
     // Combine entrance scale with breathing pulse
     const combinedScale = entranceScale * breathScale;
@@ -151,12 +166,12 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
         <Group
             ref={groupRef}
             id={id}
-            x={x}
-            y={y}
-            scaleX={combinedScale}
-            scaleY={combinedScale}
+            x={x + width / 2}
+            y={y + totalHeight / 2}
             offsetX={width / 2}
             offsetY={totalHeight / 2}
+            scaleX={combinedScale}
+            scaleY={combinedScale}
             draggable
             onClick={onSelect}
             onTap={onSelect}

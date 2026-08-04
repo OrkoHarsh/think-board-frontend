@@ -117,9 +117,9 @@ class WSClient {
     }
 
     handleMessage(message) {
-        const { type, payload } = message;
+        const { type, payload, userId } = message;
         if (this.listeners.has(type)) {
-            this.listeners.get(type).forEach((callback) => callback(payload));
+            this.listeners.get(type).forEach((callback) => callback(payload, userId));
         }
     }
 

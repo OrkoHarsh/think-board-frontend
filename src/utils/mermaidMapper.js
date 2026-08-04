@@ -14,12 +14,13 @@ import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 // ============================================================================
 // Constants
 // ============================================================================
-const ICON_WIDTH = 70;
+const ICON_WIDTH = 80;
 const ICON_HEIGHT = 55;
 const LABEL_HEIGHT = 16;
 const LABEL_GAP = 6;
-const ARROWHEAD_LENGTH = 12;
-const GAP_FROM_EDGE = 4; // small gap so arrowhead tip touches icon border, not inside it
+const NODE_TOTAL_HEIGHT = ICON_HEIGHT + LABEL_GAP + LABEL_HEIGHT;
+const LAYER_X_GAP = 180;
+const LAYER_Y_GAP = 110;
 
 // ============================================================================
 // Icon Mapping
@@ -84,6 +85,152 @@ function parseLabels(mermaidString) {
         }
     });
     return labels;
+}
+
+function parseEdges(mermaidString) {
+    const edges = [];
+    const clean = mermaidString.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+    clean.split('\n').forEach(line => {
+        line = line.trim();
+        if (!line || /^graph\s/i.test(line) || /^subgraph/i.test(line) ||
+            line === 'end' || line.startsWith('%%') || line.startsWith('style ') ||
+            line.startsWith('classDef ')) return;
+        const regex = /(\w+)(?:\[[^\]]*\])?\s*-+>+\s*(\w+)(?:\[[^\]]*\])?/g;
+        let match;
+        while ((match = regex.exec(line)) !== null) {
+            const from = match[1], to = match[2];
+            if (from && to && from !== to && from !== 'graph') {
+                edges.push({ from, to });
+            }
+        }
+    });
+    return edges;
+}
+
+function buildObjectsFromLayout(nodeIds, labelMap, edges, positionMap) {
+    const boardObjects = [];
+    nodeIds.forEach(mermaidId => {
+        const pos = positionMap.get(mermaidId);
+        if (!pos) return;
+
+        const label = labelMap.get(mermaidId) || mermaidId;
+        boardObjects.push({
+            id: `icon-${mermaidId}`,
+            type: 'icon',
+            iconKey: getIconKey(label),
+            label,
+            x: pos.x,
+            y: pos.y,
+            width: ICON_WIDTH,
+            height: ICON_HEIGHT,
+        });
+    });
+
+    const connectorObjects = [];
+    const seenEdges = new Set();
+    edges.forEach(({ from, to }) => {
+        const edgeKey = `${from}->${to}`;
+        if (seenEdges.has(edgeKey)) return;
+
+        const fromPos = positionMap.get(from);
+        const toPos = positionMap.get(to);
+        if (!fromPos || !toPos) return;
+
+        seenEdges.add(edgeKey);
+        connectorObjects.push({
+            id: `arrow-${from}_${to}`,
+            type: 'arrow',
+            x: 0,
+            y: 0,
+            points: computeElbowEdge(fromPos, toPos),
+            stroke: '#475569',
+            strokeWidth: 2.5,
+        });
+    });
+
+    return [...boardObjects, ...connectorObjects];
+}
+
+function centerPositionMap(positionMap, canvasCenterX, canvasCenterY) {
+    if (canvasCenterX <= 0 || canvasCenterY <= 0 || positionMap.size === 0) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    positionMap.forEach(pos => {
+        minX = Math.min(minX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxX = Math.max(maxX, pos.x + pos.width);
+        maxY = Math.max(maxY, pos.y + pos.height);
+    });
+
+    const shiftX = canvasCenterX - (minX + (maxX - minX) / 2);
+    const shiftY = canvasCenterY - (minY + (maxY - minY) / 2);
+
+    positionMap.forEach((pos, key) => {
+        positionMap.set(key, { ...pos, x: pos.x + shiftX, y: pos.y + shiftY });
+    });
+}
+
+function buildFallbackDiagram(mermaidString, nodeIds, labelMap, canvasCenterX, canvasCenterY) {
+    const edges = parseEdges(mermaidString);
+    const positionMap = new Map();
+    applyFallbackLayout(nodeIds, edges, positionMap);
+    centerPositionMap(positionMap, canvasCenterX, canvasCenterY);
+    return buildObjectsFromLayout(nodeIds, labelMap, edges, positionMap);
+}
+
+function applyFallbackLayout(nodeIds, edges, positionMap) {
+    const unplaced = nodeIds.filter(id => !positionMap.has(id));
+    if (unplaced.length === 0) return;
+
+    const incoming = new Map(nodeIds.map(id => [id, 0]));
+    edges.forEach(({ to }) => incoming.set(to, (incoming.get(to) || 0) + 1));
+
+    const adj = new Map();
+    edges.forEach(({ from, to }) => {
+        if (!adj.has(from)) adj.set(from, []);
+        adj.get(from).push(to);
+    });
+
+    const layerOf = new Map();
+    const queue = nodeIds.filter(id => incoming.get(id) === 0);
+    if (queue.length === 0) queue.push(nodeIds[0]);
+
+    queue.forEach(id => layerOf.set(id, 0));
+    const visited = new Set(queue);
+    while (queue.length > 0) {
+        const id = queue.shift();
+        const layer = layerOf.get(id) ?? 0;
+        (adj.get(id) || []).forEach(child => {
+            layerOf.set(child, Math.max(layerOf.get(child) ?? 0, layer + 1));
+            if (!visited.has(child)) {
+                visited.add(child);
+                queue.push(child);
+            }
+        });
+    }
+
+    unplaced.forEach(id => {
+        if (!layerOf.has(id)) layerOf.set(id, 0);
+    });
+
+    const byLayer = new Map();
+    unplaced.forEach(id => {
+        const layer = layerOf.get(id) || 0;
+        if (!byLayer.has(layer)) byLayer.set(layer, []);
+        byLayer.get(layer).push(id);
+    });
+
+    unplaced.forEach(id => {
+        const layer = layerOf.get(id) || 0;
+        const indexInLayer = byLayer.get(layer).indexOf(id);
+        positionMap.set(id, {
+            x: layer * LAYER_X_GAP,
+            y: indexInLayer * LAYER_Y_GAP,
+            width: ICON_WIDTH,
+            height: NODE_TOTAL_HEIGHT,
+        });
+        console.log(`[Fallback] "${id}" placed at layer ${layer}, index ${indexInLayer}`);
+    });
 }
 
 // ============================================================================
@@ -215,177 +362,73 @@ export async function mermaidToBoardObjects(mermaidString, canvasCenterX = 0, ca
 
         // Build position map: mermaidId → {x, y, width, height}
         const positionMap = new Map();
+        const usedMatchedIds = new Set();
 
         shapeElements.forEach(shape => {
             const label = shape.text || '';
 
-            // Center the uniform icon on the Excalidraw shape position
             const centeredX = shape.x + (shape.width || ICON_WIDTH) / 2 - ICON_WIDTH / 2;
-            const centeredY = shape.y + (shape.height || ICON_HEIGHT) / 2 - ICON_HEIGHT / 2;
+            const centeredY = shape.y + (shape.height || ICON_HEIGHT) / 2 - NODE_TOTAL_HEIGHT / 2;
 
-            // Match to mermaid ID
             let matchedId = null;
 
-            if (labelMap.has(shape.id)) {
+            if (labelMap.has(shape.id) && !usedMatchedIds.has(shape.id)) {
                 matchedId = shape.id;
             }
 
             if (!matchedId) {
                 const parts = shape.id.split('-');
                 for (const part of parts) {
-                    if (labelMap.has(part)) { matchedId = part; break; }
+                    if (labelMap.has(part) && !usedMatchedIds.has(part)) {
+                        matchedId = part;
+                        break;
+                    }
                 }
             }
 
             if (!matchedId && label) {
                 for (const [mermaidId, mermaidLabel] of labelMap.entries()) {
+                    if (usedMatchedIds.has(mermaidId)) continue;
                     if (mermaidLabel === label || mermaidLabel.toLowerCase() === label.toLowerCase()) {
-                        matchedId = mermaidId; break;
+                        matchedId = mermaidId;
+                        break;
                     }
                 }
             }
 
             if (matchedId) {
+                usedMatchedIds.add(matchedId);
                 positionMap.set(matchedId, {
                     x: centeredX,
                     y: centeredY,
                     width: ICON_WIDTH,
-                    height: ICON_HEIGHT,
+                    height: NODE_TOTAL_HEIGHT,
                 });
                 console.log(`[Mapping] "${shape.id}" → "${matchedId}" at (${centeredX.toFixed(0)},${centeredY.toFixed(0)})`);
             }
         });
 
-        // --- Auto-center the entire diagram on canvas (Fix #3) ---
-        if (canvasCenterX > 0 && canvasCenterY > 0 && positionMap.size > 0) {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            positionMap.forEach(pos => {
-                minX = Math.min(minX, pos.x);
-                minY = Math.min(minY, pos.y);
-                maxX = Math.max(maxX, pos.x + pos.width);
-                maxY = Math.max(maxY, pos.y + pos.height);
-            });
+        const parsedEdges = parseEdges(mermaidString);
+        applyFallbackLayout(nodeIds, parsedEdges, positionMap);
 
-            const diagramW = maxX - minX;
-            const diagramH = maxY - minY;
-            const diagramCX = minX + diagramW / 2;
-            const diagramCY = minY + diagramH / 2;
-
-            const shiftX = canvasCenterX - diagramCX;
-            const shiftY = canvasCenterY - diagramCY;
-
-            // Apply shift to all positions
-            positionMap.forEach((pos, key) => {
-                positionMap.set(key, { ...pos, x: pos.x + shiftX, y: pos.y + shiftY });
-            });
-
-            console.log(`[Auto-center] Diagram bounds: (${minX.toFixed(0)},${minY.toFixed(0)})-(${maxX.toFixed(0)},${maxY.toFixed(0)})`);
-            console.log(`[Auto-center] Shifted by (${shiftX.toFixed(0)},${shiftY.toFixed(0)})`);
+        if (positionMap.size === 0) {
+            console.warn('[MermaidMapper] Excalidraw returned no usable shapes — using fallback layout');
+            return buildFallbackDiagram(mermaidString, nodeIds, labelMap, canvasCenterX, canvasCenterY);
         }
 
-        // --- Create node objects (Fix #2: use standard icon dimensions) ---
-        const boardObjects = [];
-        nodeIds.forEach(mermaidId => {
-            const pos = positionMap.get(mermaidId);
-            if (!pos) {
-                console.warn(`[Mapper] No position for mermaid node "${mermaidId}"`);
-                return;
-            }
+        centerPositionMap(positionMap, canvasCenterX, canvasCenterY);
 
-            const label = labelMap.get(mermaidId) || mermaidId;
-            const iconKey = getIconKey(label);
-
-            boardObjects.push({
-                id: `icon-${mermaidId}`,
-                type: 'icon',
-                iconKey,
-                label,
-                x: pos.x,
-                y: pos.y,
-                width: pos.width,
-                height: pos.height,
-            });
-        });
-
-        console.log(`Created ${boardObjects.length} nodes`);
-
-        // --- Create edge objects using Excalidraw arrows (Fix #4) + ray-box intersection (Fix #1) ---
-        const connectorObjects = [];
-        const seenEdges = new Set();
-
-        // Strategy: Try to match Excalidraw arrows to mermaid edges first
-        // Excalidraw arrows have start/end bindings or raw start/end coordinates
-        const parsedEdges = [];
-
-        // Parse edges from mermaid string
-        const clean = mermaidString.replace(/```mermaid/g, '').replace(/```/g, '').trim();
-        clean.split('\n').forEach(line => {
-            line = line.trim();
-            if (!line || /^graph\s/i.test(line) || /^subgraph/i.test(line) ||
-                line === 'end' || line.startsWith('%%') || line.startsWith('style ') ||
-                line.startsWith('classDef ')) return;
-            const regex = /(\w+)(?:\[[^\]]*\])?\s*-->?\s*(\w+)(?:\[[^\]]*\])?/g;
-            let match;
-            while ((match = regex.exec(line)) !== null) {
-                const from = match[1], to = match[2];
-                if (from && to && from !== to && from !== 'graph') {
-                    parsedEdges.push({ from, to });
-                }
-            }
-        });
-
-        // Try to match Excalidraw arrows to mermaid edges
-        const usedExcalidrawArrows = new Set();
-
-        parsedEdges.forEach(({ from, to }) => {
-            const edgeKey = `${from}->${to}`;
-            if (seenEdges.has(edgeKey)) return;
-
-            const fromPos = positionMap.get(from);
-            const toPos = positionMap.get(to);
-            if (!fromPos || !toPos) return;
-
-            // Check if there's a matching Excalidraw arrow we can use
-            const exArrow = arrowElements.find(a => {
-                if (usedExcalidrawArrows.has(a.id)) return false;
-                // Check by position proximity
-                const startMatch = Math.abs(a.start.x - fromPos.x) < 30 && Math.abs(a.start.y - fromPos.y) < 30;
-                const endMatch = Math.abs(a.end.x - toPos.x) < 30 && Math.abs(a.end.y - toPos.y) < 30;
-                return startMatch && endMatch;
-            });
-
-            let points;
-            if (exArrow && exArrow.points && exArrow.points.length >= 4) {
-                // Use Excalidraw's routed path, adjusted to our icon positions
-                // Recalculate: source right edge → ... → target left edge
-                points = computeElbowEdge(fromPos, toPos);
-                usedExcalidrawArrows.add(exArrow.id);
-            } else {
-                // Compute elbow route with ray-box intersection
-                points = computeElbowEdge(fromPos, toPos);
-            }
-
-            seenEdges.add(edgeKey);
-
-            connectorObjects.push({
-                id: `arrow-${from}_${to}`,
-                type: 'arrow',
-                x: 0, y: 0,
-                points,
-                stroke: '#475569',
-                strokeWidth: 2.5,
-            });
-
-            console.log(`[Edge] ${from}→${to}: points=[${points.map(p => p.toFixed(0)).join(',')}]`);
-        });
-
-        const result = [...boardObjects, ...connectorObjects];
-        console.log(`=== ${result.length} total (${boardObjects.length} nodes + ${connectorObjects.length} arrows) ===`);
+        const result = buildObjectsFromLayout(nodeIds, labelMap, parsedEdges, positionMap);
+        console.log(`=== ${result.length} total objects ===`);
         return result;
 
     } catch (err) {
         console.error('[MermaidMapper] Fatal error:', err);
         console.error(err.stack);
-        return [];
+        const labelMap = parseLabels(mermaidString);
+        const nodeIds = Array.from(labelMap.keys());
+        if (nodeIds.length === 0) return [];
+        console.warn('[MermaidMapper] Using fallback layout after parse failure');
+        return buildFallbackDiagram(mermaidString, nodeIds, labelMap, canvasCenterX, canvasCenterY);
     }
 }

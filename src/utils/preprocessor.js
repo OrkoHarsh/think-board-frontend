@@ -258,7 +258,9 @@ function reconstructMermaid(direction, labels, edges, hints) {
     // Subgraphs complicate parsing and layout
     let mermaid = `graph ${direction}\n`;
     edges.forEach(e => {
-        mermaid += `    ${e.from}[${labels.get(e.from)}] --> ${e.to}[${labels.get(e.to)}]\n`;
+        const fromLabel = labels.get(e.from) || e.from;
+        const toLabel = labels.get(e.to) || e.to;
+        mermaid += `    ${e.from}[${fromLabel}] --> ${e.to}[${toLabel}]\n`;
     });
     return mermaid;
 }

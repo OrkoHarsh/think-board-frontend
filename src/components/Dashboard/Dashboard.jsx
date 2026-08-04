@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchBoards, createBoard } from '../../state/boardSlice';
+import { fetchBoards, createBoard, updateBoard, deleteBoard } from '../../state/boardSlice';
 import { logout } from '../../state/authSlice';
 import BoardCard from './BoardCard';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../hooks/useTheme';
+import Swal from 'sweetalert2';
+
+const showErrorAlert = (message) => {
+    const isDark = document.documentElement.classList.contains('dark');
+    return Swal.fire({
+        title: 'Something went wrong',
+        text: message,
+        icon: 'error',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#4f46e5',
+        background: isDark ? '#1f2937' : '#ffffff',
+        color: isDark ? '#f3f4f6' : '#111827',
+    });
+};
 
 const Dashboard = () => {
     const dispatch = useDispatch();
@@ -30,6 +44,20 @@ const Dashboard = () => {
     const handleLogout = () => {
         dispatch(logout());
         navigate('/login');
+    };
+
+    const handleRenameBoard = async (boardId, title) => {
+        const result = await dispatch(updateBoard({ boardId, title }));
+        if (updateBoard.rejected.match(result)) {
+            await showErrorAlert(result.payload || 'Failed to rename board');
+        }
+    };
+
+    const handleDeleteBoard = async (boardId) => {
+        const result = await dispatch(deleteBoard(boardId));
+        if (deleteBoard.rejected.match(result)) {
+            await showErrorAlert(result.payload || 'Failed to delete board');
+        }
     };
 
     return (
@@ -176,7 +204,12 @@ const Dashboard = () => {
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             {boards.map((board) => (
-                                <BoardCard key={board.id} board={board} />
+                                <BoardCard
+                                    key={board.id}
+                                    board={board}
+                                    onRename={handleRenameBoard}
+                                    onDelete={handleDeleteBoard}
+                                />
                             ))}
                         </div>
                     )}

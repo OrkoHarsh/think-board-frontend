@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { wsClient } from '../services/wsClient';
 import {
     updateBoardOptimistically,
@@ -12,21 +12,33 @@ const CURSOR_THROTTLE_MS = 30; // ~33fps for cursor updates
 export const useWebSocket = (boardId, { onUserJoin, onUserLeave, onCursorMove } = {}) => {
     const dispatch = useDispatch();
     const lastCursorSent = useRef(0);
+    const currentUserId = useSelector((state) => state.auth.user?.id);
+    const currentUserIdRef = useRef(currentUserId);
+    currentUserIdRef.current = currentUserId;
 
     useEffect(() => {
         if (!boardId) return;
 
         wsClient.connect(boardId);
 
-        const unsubscribeUpdate = wsClient.subscribe('update_object', (payload) => {
+        const isOwn = (userId, payload) => {
+            const id = userId || payload?.userId;
+            return id && id === currentUserIdRef.current;
+        };
+
+        // Skip own echoes — local optimistic updates already applied
+        const unsubscribeUpdate = wsClient.subscribe('update_object', (payload, userId) => {
+            if (isOwn(userId, payload)) return;
             dispatch(updateBoardOptimistically(payload));
         });
 
-        const unsubscribeAdd = wsClient.subscribe('add_object', (payload) => {
+        const unsubscribeAdd = wsClient.subscribe('add_object', (payload, userId) => {
+            if (isOwn(userId, payload)) return;
             dispatch(addObjectOptimistically(payload));
         });
 
-        const unsubscribeDelete = wsClient.subscribe('delete_object', (payload) => {
+        const unsubscribeDelete = wsClient.subscribe('delete_object', (payload, userId) => {
+            if (isOwn(userId, payload)) return;
             dispatch(deleteObjectOptimistically(payload.objectId));
         });
 
@@ -44,7 +56,8 @@ export const useWebSocket = (boardId, { onUserJoin, onUserLeave, onCursorMove } 
         });
 
         // Remote cursor events (matches backend cursor_move broadcast)
-        const unsubscribeCursor = wsClient.subscribe('cursor_move', (payload) => {
+        const unsubscribeCursor = wsClient.subscribe('cursor_move', (payload, userId) => {
+            if (isOwn(userId, payload)) return;
             if (payload?.userId && onCursorMove) {
                 onCursorMove(payload.userId, payload.x, payload.y);
             }

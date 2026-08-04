@@ -3,9 +3,21 @@ const BASE = 'https://api.iconify.design';
 export const getIconUrl = (iconKey) => {
     if (!iconKey || !iconKey.includes(':')) return null;
     const [prefix, name] = iconKey.split(':');
-    // MDI icons are monochrome — inject a dark colour so they render visibly
-    const color = prefix === 'mdi' ? '?color=%23374151' : '';
-    return `${BASE}/${prefix}/${name}.svg${color}`;
+    // MDI icons are monochrome — inject a colour based on current theme.
+    // This keeps icons readable in both light + dark mode.
+    if (prefix === 'mdi') {
+        const isDark =
+            typeof document !== 'undefined' &&
+            document.documentElement &&
+            document.documentElement.classList &&
+            document.documentElement.classList.contains('dark');
+
+        // Light: dark gray. Dark: light gray.
+        const mdiColor = isDark ? '%23E5E7EB' : '%23374151'; // #E5E7EB / #374151
+        return `${BASE}/${prefix}/${name}.svg?color=${mdiColor}`;
+    }
+
+    return `${BASE}/${prefix}/${name}.svg`;
 };
 
 export const ICON_CATEGORIES = [

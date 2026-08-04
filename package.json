@@ -27,6 +27,7 @@
     "react-konva": "^19.2.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.10.1",
+    "sweetalert2": "^11.26.25",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "uuid": "^13.0.0"

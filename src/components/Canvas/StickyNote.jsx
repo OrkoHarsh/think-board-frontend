@@ -6,6 +6,11 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
 
     const noteWidth = noteProps.width || 150;
     const noteHeight = noteProps.height || 150;
+    const fontSize = noteProps.fontSize || 16;
+    const fontFamily = noteProps.fontFamily || 'Inter, system-ui, sans-serif';
+    const fontStyle = noteProps.fontStyle || 'normal';
+    const textDecoration = noteProps.textDecoration || '';
+    const align = noteProps.align || 'left';
 
     useEffect(() => {}, [isSelected]); // isSelected used for Transformer in CanvasStage
 
@@ -30,6 +35,7 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
     const handleDblClick = () => {
         const stage = groupRef.current.getStage();
         const stageBox = stage.container().getBoundingClientRect();
+        const scale = stage.scaleX() || 1;
 
         const transform = groupRef.current.getAbsoluteTransform().copy();
         const topLeft = transform.point({ x: 0, y: 0 });
@@ -49,10 +55,10 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
             left: `${left}px`,
             width: `${areaWidth}px`,
             height: `${areaHeight}px`,
-            fontSize: `${16 * (stage.scaleX() || 1)}px`,
+            fontSize: `${fontSize * scale}px`,
             border: '2px solid #f59e0b',
             borderRadius: '4px',
-            padding: `${10 * (stage.scaleX() || 1)}px`,
+            padding: `${10 * scale}px`,
             margin: '0',
             overflow: 'hidden',
             background: noteProps.fill || '#FEF3C7',
@@ -60,7 +66,11 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
             resize: 'none',
             color: '#374151',
             zIndex: '1000',
-            fontFamily: 'sans-serif',
+            fontFamily,
+            fontWeight: fontStyle.includes('bold') ? 'bold' : 'normal',
+            fontStyle: fontStyle.includes('italic') ? 'italic' : 'normal',
+            textDecoration: textDecoration || 'none',
+            textAlign: align,
             boxSizing: 'border-box',
         });
         textarea.focus();
@@ -112,13 +122,17 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
                     cornerRadius={4}
                 />
                 <Text
+                    key={`t-${fontFamily}-${fontSize}-${align}-${fontStyle}-${textDecoration}`}
                     x={10}
                     y={10}
                     width={noteWidth - 20}
                     height={noteHeight - 20}
                     text={noteProps.text || 'Double-click to edit'}
-                    fontSize={16}
-                    fontFamily="sans-serif"
+                    fontSize={fontSize}
+                    fontFamily={fontFamily}
+                    fontStyle={fontStyle}
+                    textDecoration={textDecoration}
+                    align={align}
                     fill="#374151"
                     wrap="word"
                     listening={false}

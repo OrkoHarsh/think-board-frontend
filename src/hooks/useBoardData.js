@@ -4,7 +4,8 @@ import {
     fetchBoardDetails,
     updateBoardOptimistically,
     addObjectOptimistically,
-    deleteObjectOptimistically
+    deleteObjectOptimistically,
+    replaceBoardObjectsOptimistically,
 } from '../state/boardSlice';
 import { useWebSocket } from './useWebSocket';
 
@@ -16,6 +17,7 @@ export const useBoardData = (boardId, presenceCallbacks = {}) => {
 
     const lastSentRef = useRef({});
     const pendingRef = useRef({});
+    const latestUpdatesRef = useRef({});
 
     const { sendUpdate, sendCursor, sendRaw } = useWebSocket(boardId, presenceCallbacks);
 
@@ -27,26 +29,34 @@ export const useBoardData = (boardId, presenceCallbacks = {}) => {
 
     const updateObject = useCallback((objectId, updates) => {
         dispatch(updateBoardOptimistically({ objectId, updates }));
+        // Merge patches so rapid style changes don't drop earlier keys
+        latestUpdatesRef.current[objectId] = {
+            ...(latestUpdatesRef.current[objectId] || {}),
+            ...updates,
+        };
 
         const now = Date.now();
         const lastSent = lastSentRef.current[objectId] || 0;
 
+        const flush = () => {
+            lastSentRef.current[objectId] = Date.now();
+            sendUpdate('update_object', {
+                objectId,
+                updates: latestUpdatesRef.current[objectId],
+            });
+            latestUpdatesRef.current[objectId] = null;
+            pendingRef.current[objectId] = null;
+        };
+
+        if (pendingRef.current[objectId]) {
+            clearTimeout(pendingRef.current[objectId]);
+            pendingRef.current[objectId] = null;
+        }
+
         if (now - lastSent >= THROTTLE_MS) {
-            lastSentRef.current[objectId] = now;
-            sendUpdate('update_object', { objectId, updates });
-            if (pendingRef.current[objectId]) {
-                clearTimeout(pendingRef.current[objectId]);
-                pendingRef.current[objectId] = null;
-            }
+            flush();
         } else {
-            if (pendingRef.current[objectId]) {
-                clearTimeout(pendingRef.current[objectId]);
-            }
-            pendingRef.current[objectId] = setTimeout(() => {
-                lastSentRef.current[objectId] = Date.now();
-                sendUpdate('update_object', { objectId, updates });
-                pendingRef.current[objectId] = null;
-            }, THROTTLE_MS - (now - lastSent));
+            pendingRef.current[objectId] = setTimeout(flush, THROTTLE_MS - (now - lastSent));
         }
     }, [dispatch, sendUpdate]);
 
@@ -61,6 +71,24 @@ export const useBoardData = (boardId, presenceCallbacks = {}) => {
         sendUpdate('delete_object', { objectId });
     }, [dispatch, sendUpdate]);
 
+    const replaceAllObjects = useCallback((newObjects, { persist = true } = {}) => {
+        const oldIds = (activeBoard?.objects || []).map((o) => o.id);
+        dispatch(replaceBoardObjectsOptimistically(newObjects));
+
+        if (!persist) return;
+
+        oldIds.forEach((objectId) => {
+            if (!newObjects.some((o) => o.id === objectId)) {
+                sendUpdate('delete_object', { objectId });
+            }
+        });
+        newObjects.forEach((object) => {
+            if (!oldIds.includes(object.id)) {
+                sendUpdate('add_object', object);
+            }
+        });
+    }, [dispatch, sendUpdate, activeBoard?.objects]);
+
     return {
         board: activeBoard,
         status,
@@ -68,6 +96,7 @@ export const useBoardData = (boardId, presenceCallbacks = {}) => {
         updateObject,
         addObject,
         deleteObject,
+        replaceAllObjects,
         sendCursor,
         sendRaw,
     };

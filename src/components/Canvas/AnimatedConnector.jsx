@@ -1,36 +1,67 @@
-import { Group, Line, Arrow as KonvaArrow, Circle, Path } from 'react-konva';
+import { Group, Line, Circle } from 'react-konva';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Konva from 'konva';
+import {
+    getDashForLineStyle,
+    getMarkerSize,
+    resolveMarkers,
+    insetShaftPoints,
+    markerInset,
+    buildMarkerGeometry,
+    getEndpointDirections,
+} from '../../utils/connectorMarkers';
+import EndpointHandles from './EndpointHandles';
 
 /**
- * AnimatedConnector: Arrow with flowing data particles along the edge path.
- *
- * Features:
- * - Particles travel along the exact edge path (including bends)
- * - Dark mode aware particle color
- * - Draggable — moves independently from nodes
- * - Click-to-select with widened hit area
- * - Smooth, continuous animation
+ * AnimatedConnector: Arrow/line with optional UML markers and flowing particles.
  */
 
 const PARTICLE_COUNT = 3;
 const PARTICLE_RADIUS = 2.5;
-const PARTICLE_SPEED = 0.012; // 3x faster: one full loop in ~1.3 seconds
-const PARTICLE_COLOR_LIGHT = '#0284c7';  // Darker sky blue for visibility on light bg
-const PARTICLE_COLOR_DARK = '#22d3ee';   // Cyan
+const PARTICLE_SPEED = 0.012;
+const PARTICLE_COLOR_LIGHT = '#0284c7';
+const PARTICLE_COLOR_DARK = '#22d3ee';
+
+const MarkerShape = ({ geom, stroke, strokeWidth }) => {
+    if (!geom) return null;
+    if (geom.kind === 'open') {
+        return (
+            <Line
+                points={geom.points}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+            />
+        );
+    }
+    return (
+        <Line
+            points={geom.points}
+            closed
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            fill={geom.fill ? stroke : undefined}
+            fillEnabled={Boolean(geom.fill)}
+            lineJoin="round"
+            listening={false}
+        />
+    );
+};
 
 const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isAnimating = false }) => {
-    const { id, points, stroke, strokeWidth, x = 0, y = 0 } = connectorProps;
+    const { id, points: rawPoints, stroke, strokeWidth, x = 0, y = 0 } = connectorProps;
+    const points = rawPoints || [0, 0, 100, 100];
     const animRef = useRef(null);
     const particlesRef = useRef([]);
     const [tick, setTick] = useState(0);
     const [isDark, setIsDark] = useState(false);
     const groupRef = useRef(null);
+    const isDraggingRef = useRef(false);
 
-    // Store original position at drag start
-    const dragOriginRef = useRef({ x: 0, y: 0 });
+    useEffect(() => {}, [isSelected, tick]);
 
-    // Dark mode detection
     useEffect(() => {
         const checkDark = () => setIsDark(document.documentElement.classList.contains('dark'));
         checkDark();
@@ -39,7 +70,6 @@ const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isA
         return () => observer.disconnect();
     }, []);
 
-    // Get point along the polyline at a given progress (0-1)
     const getPointAtProgress = useCallback((progress) => {
         if (!points || points.length < 4) return { x: 0, y: 0 };
 
@@ -75,7 +105,6 @@ const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isA
         return { x: points[points.length - 2], y: points[points.length - 1] };
     }, [points]);
 
-    // Animation loop - only runs when isAnimating is true
     useEffect(() => {
         const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (prefersReducedMotion || !isAnimating) {
@@ -92,7 +121,9 @@ const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isA
                 p.progress += PARTICLE_SPEED;
                 if (p.progress > 1) p.progress -= 1;
             });
-            setTick(t => t + 1);
+            if (!isDraggingRef.current) {
+                setTick(t => t + 1);
+            }
         });
         animation.start();
         animRef.current = animation;
@@ -100,7 +131,6 @@ const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isA
         return () => animation.stop();
     }, [id, isAnimating]);
 
-    // Render particles along the path
     const renderParticles = () => {
         if (!isAnimating) return null;
         const color = isDark ? PARTICLE_COLOR_DARK : PARTICLE_COLOR_LIGHT;
@@ -127,73 +157,67 @@ const AnimatedConnector = ({ connectorProps, isSelected, onSelect, onChange, isA
     const actualStroke = stroke || arrowColor;
     const actualWidth = strokeWidth || 2.5;
 
-    const handleDragStart = () => {
-        dragOriginRef.current = { x: x || 0, y: y || 0 };
-    };
+    const { startMarker, endMarker, lineStyle } = resolveMarkers(connectorProps);
+    const size = getMarkerSize(actualWidth);
+    const startIn = markerInset(startMarker, size);
+    const endIn = markerInset(endMarker, size);
+    const shaftPoints = insetShaftPoints(points, startIn, endIn);
+    const dash = getDashForLineStyle(lineStyle);
+    const { startTip, endTip } = getEndpointDirections(points);
+    const startGeom = buildMarkerGeometry(startMarker, startTip.x, startTip.y, startTip.ux, startTip.uy, size);
+    const endGeom = buildMarkerGeometry(endMarker, endTip.x, endTip.y, endTip.ux, endTip.uy, size);
 
-    const handleDragMove = (e) => {
-        const node = e.target;
-        const dx = node.x();
-        const dy = node.y();
-        // Move the group visually during drag so everything follows the cursor
-        if (groupRef.current) {
-            groupRef.current.position({ x: dragOriginRef.current.x + dx, y: dragOriginRef.current.y + dy });
+    const handleDragStart = (e) => {
+        if (e.target !== groupRef.current) {
+            return;
         }
+        isDraggingRef.current = true;
     };
 
     const handleDragEnd = (e) => {
-        const node = e.target;
-        const dx = node.x();
-        const dy = node.y();
-
-        // Translate all points by the drag delta
-        const newPoints = points.map((v, i) => v + (i % 2 === 0 ? dx : dy));
-
+        if (e.target !== groupRef.current) return;
+        isDraggingRef.current = false;
         onChange({
-            x: 0,
-            y: 0,
-            points: newPoints,
+            x: e.target.x(),
+            y: e.target.y(),
         });
-
-        // Reset the draggable element back to origin (points are now absolute)
-        node.position({ x: 0, y: 0 });
     };
 
     return (
-        <Group id={id} x={x} y={y} ref={groupRef}>
-            {/* Invisible wide hit area — this is the draggable surface */}
+        <Group
+            id={id}
+            x={x}
+            y={y}
+            ref={groupRef}
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onClick={onSelect}
+            onTap={onSelect}
+        >
             <Line
-                x={0} y={0}
-                points={points || [0, 0, 100, 100]}
+                points={points}
                 stroke="transparent"
                 strokeWidth={28}
-                draggable
-                onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-                onClick={onSelect}
-                onTap={onSelect}
                 perfectDrawEnabled={false}
             />
-            {/* Visible arrow — NOT draggable, follows points (updated on drag end) */}
-            <KonvaArrow
-                x={0}
-                y={0}
-                points={points || [0, 0, 100, 100]}
+            <Line
+                points={shaftPoints}
                 stroke={actualStroke}
                 strokeWidth={actualWidth}
+                dash={dash || []}
+                dashEnabled={Boolean(dash)}
                 lineCap="round"
                 lineJoin="round"
-                pointerLength={12}
-                pointerWidth={10}
-                fill={actualStroke}
-                onClick={onSelect}
-                onTap={onSelect}
                 hitStrokeWidth={20}
                 listening={false}
             />
-            {/* Flowing particles */}
+            <MarkerShape geom={startGeom} stroke={actualStroke} strokeWidth={Math.max(1.5, actualWidth)} />
+            <MarkerShape geom={endGeom} stroke={actualStroke} strokeWidth={Math.max(1.5, actualWidth)} />
             {renderParticles()}
+            {isSelected && (
+                <EndpointHandles points={points} onChange={onChange} />
+            )}
         </Group>
     );
 };

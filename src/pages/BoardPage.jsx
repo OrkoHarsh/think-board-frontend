@@ -6,10 +6,13 @@ import { usePresence, getUserColor } from '../hooks/usePresence';
 import { useTheme } from '../hooks/useTheme';
 import CanvasStage from '../components/Canvas/CanvasStage';
 import Toolbar from '../components/Canvas/Toolbar';
+import LineToolPicker from '../components/Canvas/LineToolPicker';
 import AskNimbusModal from '../components/AI/AskNimbusModal';
 import IconPalette from '../components/Icons/IconPalette';
+import ShareBoardModal from '../components/Share/ShareBoardModal';
 import { generateId } from '../utils/helpers';
 import { aiApi } from '../services/api';
+import { preprocessMermaid } from '../utils/preprocessor';
 import { mermaidToBoardObjects } from '../utils/mermaidMapper';
 
 const BoardPage = () => {
@@ -34,7 +37,7 @@ const BoardPage = () => {
         onCursorMove: useCallback((userId, x, y) => updateCursor(userId, x, y), [updateCursor]),
     };
 
-    const { board, status, error, updateObject, addObject, deleteObject, sendCursor, sendRaw } =
+    const { board, status, error, updateObject, addObject, deleteObject, replaceAllObjects, sendCursor, sendRaw } =
         useBoardData(boardId, presenceCallbacks);
 
     // Ref to track current objects for immediate access
@@ -60,8 +63,9 @@ const BoardPage = () => {
     }, [boardId, currentUser?.id, currentUser?.name, sendRaw]);
 
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState(null);
     const [isShareOpen, setIsShareOpen] = useState(false);
-    const [shareCopied, setShareCopied] = useState(false);
     const [isExportOpen, setIsExportOpen] = useState(false);
     const [stageScale, setStageScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
@@ -71,6 +75,36 @@ const BoardPage = () => {
     const [animKey, setAnimKey] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [showLinePicker, setShowLinePicker] = useState(false);
+    const [connectorDefaults, setConnectorDefaults] = useState({
+        lineStyle: 'solid',
+        startMarker: 'none',
+        endMarker: 'none',
+        strokeWidth: 2,
+    });
+
+    // When Line/Arrow tool is chosen, open style picker with sensible defaults
+    useEffect(() => {
+        if (activeTool === 'line') {
+            setConnectorDefaults({
+                lineStyle: 'solid',
+                startMarker: 'none',
+                endMarker: 'none',
+                strokeWidth: 2,
+            });
+            setShowLinePicker(true);
+        } else if (activeTool === 'arrow') {
+            setConnectorDefaults({
+                lineStyle: 'solid',
+                startMarker: 'none',
+                endMarker: 'arrow',
+                strokeWidth: 2,
+            });
+            setShowLinePicker(true);
+        } else {
+            setShowLinePicker(false);
+        }
+    }, [activeTool]);
 
     // Toggle play/pause for all animations
     const toggleAnimation = useCallback(() => {
@@ -82,13 +116,6 @@ const BoardPage = () => {
             return !prev;
         });
     }, []);
-
-    const handleCopyLink = () => {
-        navigator.clipboard.writeText(window.location.href).then(() => {
-            setShareCopied(true);
-            setTimeout(() => setShareCopied(false), 2000);
-        });
-    };
 
     const handleExportPNG = () => {
         if (canvasRef.current) {
@@ -213,87 +240,84 @@ const BoardPage = () => {
         const width = stage.width();
         const height = stage.height();
 
-        // Minimal size - gifenc is extremely slow in JS
-        const scale = Math.min(1, 256 / width);
-        const gifWidth = Math.round(width * scale);
-        const gifHeight = Math.round(height * scale);
+        // Keep GIF small — quantization is CPU-heavy in the browser
+        const maxSide = 480;
+        const scale = Math.min(1, maxSide / Math.max(width, height));
+        const gifWidth = Math.max(1, Math.round(width * scale));
+        const gifHeight = Math.max(1, Math.round(height * scale));
 
         const offscreen = document.createElement('canvas');
         offscreen.width = gifWidth;
         offscreen.height = gifHeight;
-        const ctx = offscreen.getContext('2d');
+        const ctx = offscreen.getContext('2d', { willReadFrequently: true });
 
-        // Trigger animations
-        setAnimKey(k => k + 1);
+        setAnimKey((k) => k + 1);
         setIsAnimating(true);
 
-        // Wait for entrance animations to start
-        await new Promise(r => setTimeout(r, 500));
+        // Let entrance animations start before capture
+        await new Promise((r) => setTimeout(r, 400));
 
-        const duration = 2000; // 2 seconds only
-        const fps = 4; // 4fps = 8 frames total
-        const frameDelay = 1000 / fps;
-        const totalFrames = Math.floor(duration / frameDelay);
+        const duration = 2000;
+        const fps = 5;
+        const frameDelay = Math.round(1000 / fps);
+        const totalFrames = Math.max(1, Math.floor(duration / frameDelay));
 
         try {
-            const { quantize, encode } = await import('gifenc');
-
-            const frames = [];
+            const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
+            const gif = GIFEncoder();
             const startTime = performance.now();
-            let frameCount = 0;
 
-            const captureFrame = () => {
-                const elapsed = performance.now() - startTime;
-                if (frameCount >= totalFrames || elapsed >= duration) {
-                    // Encode GIF (this is the slow part - will take 5-15 seconds)
-                    const palette = quantize(frames, 64); // 64 colors = much faster
-                    const gifBytes = encode(frames, palette, {
-                        delay: Math.round(frameDelay / 10),
-                        repeat: 0
-                    });
-
-                    const blob = new Blob([gifBytes], { type: 'image/gif' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `board-${boardId}-animation.gif`;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                    setIsRecording(false);
-                    setIsAnimating(false);
-                    return;
+            for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+                // Pace capture to roughly match animation timeline
+                const targetTime = startTime + frameIndex * frameDelay;
+                const wait = targetTime - performance.now();
+                if (wait > 0) {
+                    await new Promise((r) => setTimeout(r, wait));
                 }
 
-                // Draw frame
                 ctx.clearRect(0, 0, gifWidth, gifHeight);
                 ctx.save();
                 ctx.scale(scale, scale);
-                layers.forEach(layer => {
-                    const layerCanvas = layer.getCanvas()._canvas;
-                    ctx.drawImage(layerCanvas, 0, 0);
+                layers.forEach((layer) => {
+                    const layerCanvas = layer.getCanvas()?._canvas;
+                    if (layerCanvas) ctx.drawImage(layerCanvas, 0, 0);
                 });
                 ctx.restore();
 
-                // Background
+                // Background under content
                 ctx.globalCompositeOperation = 'destination-over';
                 ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#111827' : '#f9fafb';
                 ctx.fillRect(0, 0, gifWidth, gifHeight);
                 ctx.globalCompositeOperation = 'source-over';
 
-                // gifenc needs frames as {width, height, data}
-                const imageData = ctx.getImageData(0, 0, gifWidth, gifHeight);
-                frames.push({ width: gifWidth, height: gifHeight, data: imageData.data });
-                frameCount++;
+                const { data } = ctx.getImageData(0, 0, gifWidth, gifHeight);
+                // Faster format for UI diagrams; 64 colors keeps encode snappy
+                const palette = quantize(data, 64, { format: 'rgb444' });
+                const index = applyPalette(data, palette, 'rgb444');
 
-                // Next frame
-                const nextDelay = Math.max(10, frameCount * frameDelay - (performance.now() - startTime));
-                setTimeout(captureFrame, nextDelay);
-            };
+                gif.writeFrame(index, gifWidth, gifHeight, {
+                    palette,
+                    delay: frameDelay,
+                    ...(frameIndex === 0 ? { repeat: 0 } : {}),
+                });
 
-            captureFrame();
+                // Yield so the UI can update ("Recording...") and remain responsive
+                await new Promise((r) => setTimeout(r, 0));
+            }
+
+            gif.finish();
+            const bytes = gif.bytes();
+            const blob = new Blob([bytes], { type: 'image/gif' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `board-${boardId}-animation.gif`;
+            link.click();
+            URL.revokeObjectURL(url);
         } catch (err) {
             console.error('GIF export error:', err);
             alert('Failed to generate GIF. Try the Video export instead.');
+        } finally {
             setIsRecording(false);
             setIsAnimating(false);
         }
@@ -323,12 +347,36 @@ const BoardPage = () => {
 
     const handleAddShape = (type) => {
         const center = getCenterPos();
-        addObject({ id: generateId(), type, x: center.x - 50, y: center.y - 50, width: 100, height: 100, fill: selectedColor });
+        addObject({
+            id: generateId(),
+            type,
+            x: center.x - 50,
+            y: center.y - 50,
+            width: 100,
+            height: 100,
+            fill: selectedColor,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 14,
+            fontStyle: 'normal',
+            textDecoration: '',
+            align: 'center',
+        });
     };
 
     const handleAddNote = () => {
         const center = getCenterPos();
-        addObject({ id: generateId(), type: 'sticky', x: center.x - 75, y: center.y - 75, text: 'New Idea' });
+        addObject({
+            id: generateId(),
+            type: 'sticky',
+            x: center.x - 75,
+            y: center.y - 75,
+            text: 'New Idea',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 16,
+            fontStyle: 'normal',
+            textDecoration: '',
+            align: 'left',
+        });
     };
 
     const handleAddIcon = (icon) => {
@@ -338,12 +386,34 @@ const BoardPage = () => {
 
     const handleAddText = () => {
         const center = getCenterPos();
-        addObject({ id: generateId(), type: 'text', x: center.x - 100, y: center.y - 25, width: 200, height: 50, text: 'Type here', fill: selectedColor });
+        addObject({
+            id: generateId(),
+            type: 'text',
+            x: center.x - 100,
+            y: center.y - 25,
+            width: 200,
+            height: 50,
+            text: 'Type here',
+            fill: selectedColor,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 20,
+            fontStyle: 'normal',
+            textDecoration: '',
+            align: 'center',
+        });
     };
 
     const remoteUsers = Object.values(presence).filter((u) => u.userId !== currentUser?.id);
+    // Only other users' cursors — drawing our own causes the lagging double-cursor
+    const remoteCursors = Object.fromEntries(remoteUsers.map((u) => [u.userId, u]));
     const myInitial = currentUser?.name?.charAt(0)?.toUpperCase() || '?';
     const myColor = getUserColor(currentUser?.id);
+    const userRole = board?.currentUserRole;
+    const isOwner =
+        userRole === 'OWNER' ||
+        (board?.ownerId != null && String(board.ownerId) === String(currentUser?.id));
+    const canEdit = isOwner || userRole === 'EDIT';
+    const isReadOnly = !canEdit;
 
     return (
         <div className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-gray-950">
@@ -390,8 +460,16 @@ const BoardPage = () => {
                     )}
 
                     <button
-                        onClick={() => setIsAIModalOpen(true)}
-                        className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1.5"
+                        onClick={() => {
+                            setAiError(null);
+                            setIsAIModalOpen(true);
+                        }}
+                        disabled={isReadOnly}
+                        className={`px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-xs font-medium flex items-center gap-1.5 ${
+                            isReadOnly
+                                ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
                     >
                         <span>✨</span> Ask ThinkBoard
                         <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300 rounded uppercase tracking-wide">Beta</span>
@@ -515,28 +593,12 @@ const BoardPage = () => {
                         </button>
 
                         {isShareOpen && (
-                            <>
-                                {/* Backdrop */}
-                                <div className="fixed inset-0 z-30" onClick={() => setIsShareOpen(false)} />
-                                {/* Modal */}
-                                <div className="absolute right-0 top-10 z-40 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4">
-                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">Share this board</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Anyone with the link can view and edit this board.</p>
-                                    <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 mb-3">
-                                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate flex-1">{window.location.href}</span>
-                                    </div>
-                                    <button
-                                        onClick={handleCopyLink}
-                                        className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${
-                                            shareCopied
-                                                ? 'bg-green-500 text-white'
-                                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                                        }`}
-                                    >
-                                        {shareCopied ? '✓ Link Copied!' : 'Copy Link'}
-                                    </button>
-                                </div>
-                            </>
+                            <ShareBoardModal
+                                boardId={boardId}
+                                boardTitle={board.title}
+                                isOwner={isOwner}
+                                onClose={() => setIsShareOpen(false)}
+                            />
                         )}
                     </div>
 
@@ -553,9 +615,18 @@ const BoardPage = () => {
 
             {/* Main Content Area */}
             <div className="flex flex-1 overflow-hidden relative">
+                {isReadOnly && (
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-medium shadow">
+                        View only — you can’t edit this board
+                    </div>
+                )}
+                {!isReadOnly && (
                 <Toolbar
                     activeTool={activeTool}
-                    setActiveTool={setActiveTool}
+                    setActiveTool={(id) => {
+                        setActiveTool(id);
+                        if (id === 'line' || id === 'arrow') setShowLinePicker(true);
+                    }}
                     onAddShape={handleAddShape}
                     onAddNote={handleAddNote}
                     onAddText={handleAddText}
@@ -566,8 +637,18 @@ const BoardPage = () => {
                     onAnimateAll={toggleAnimation}
                     isAnimating={isAnimating}
                 />
+                )}
 
-                {showIconPalette && (
+                {!isReadOnly && showLinePicker && (activeTool === 'line' || activeTool === 'arrow') && (
+                    <LineToolPicker
+                        tool={activeTool}
+                        value={connectorDefaults}
+                        onChange={(props) => setConnectorDefaults((prev) => ({ ...prev, ...props }))}
+                        onClose={() => setShowLinePicker(false)}
+                    />
+                )}
+
+                {!isReadOnly && showIconPalette && (
                     <IconPalette onAddIcon={handleAddIcon} onClose={() => setShowIconPalette(false)} />
                 )}
 
@@ -575,16 +656,17 @@ const BoardPage = () => {
                     <CanvasStage
                         ref={canvasRef}
                         objects={board.objects || []}
-                        onUpdate={updateObject}
-                        onDelete={deleteObject}
-                        onAdd={addObject}
+                        onUpdate={isReadOnly ? () => {} : updateObject}
+                        onDelete={isReadOnly ? () => {} : deleteObject}
+                        onAdd={isReadOnly ? () => {} : addObject}
                         onSelect={(id) => id}
-                        activeTool={activeTool}
+                        activeTool={isReadOnly ? 'hand' : activeTool}
+                        connectorDefaults={connectorDefaults}
                         stageScale={stageScale}
                         stagePos={stagePos}
                         setStageScale={setStageScale}
                         setStagePos={setStagePos}
-                        remoteCursors={presence}
+                        remoteCursors={remoteCursors}
                         onCursorMove={sendCursor}
                         animKey={animKey}
                         isAnimating={isAnimating}
@@ -595,38 +677,53 @@ const BoardPage = () => {
             {isAIModalOpen && (
                 <AskNimbusModal
                     isOpen={isAIModalOpen}
-                    onClose={() => setIsAIModalOpen(false)}
+                    isLoading={aiLoading}
+                    error={aiError}
+                    onClose={() => {
+                        if (!aiLoading) {
+                            setAiError(null);
+                            setIsAIModalOpen(false);
+                        }
+                    }}
                     onGenerate={async (prompt) => {
+                        setAiLoading(true);
+                        setAiError(null);
                         try {
-                            console.log('>>> AI Generate triggered');
+                            if (!board?.id) {
+                                throw new Error('Board is still loading. Please wait and try again.');
+                            }
                             const response = await aiApi.generate(boardId, prompt);
-                            console.log('>>> API Response:', JSON.stringify(response, null, 2));
                             const mermaid = response.data?.mermaid;
-                            console.log('>>> Mermaid string:', mermaid);
                             if (!mermaid) {
-                                console.error('>>> No mermaid in response!');
                                 throw new Error('AI returned empty diagram');
                             }
                             const center = getCenterPos();
-                            console.log('>>> Center position:', center);
-                            const objects = await mermaidToBoardObjects(mermaid, center.x, center.y);
-                            console.log('>>> Generated objects:', objects.length, objects);
+                            const cleanedMermaid = preprocessMermaid(mermaid);
+                            const mappedObjects = await mermaidToBoardObjects(cleanedMermaid, center.x, center.y);
+                            if (!mappedObjects.length) {
+                                throw new Error('Could not render diagram from AI response. Try a simpler prompt.');
+                            }
 
-                            // Clear existing objects first
-                            clearBoard();
+                            const runId = Date.now().toString(36);
+                            const objects = mappedObjects.map((obj) => ({
+                                ...obj,
+                                id: `ai-${runId}-${obj.id}`,
+                            }));
 
-                            // Wait for deletions to propagate, then add new objects
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                            
-                            objects.forEach((obj) => {
-                                console.log('>>> Adding object:', obj);
-                                addObject(obj);
-                            });
+                            replaceAllObjects(objects);
+                            // Close the modal early so its backdrop can't visually block the UI.
+                            setIsAIModalOpen(false);
+                            setAnimKey((k) => k + 1);
                         } catch (err) {
-                            console.error('>>> AI generation failed:', err);
-                            handleAddNote();
+                            console.error('AI generation failed:', err);
+                            const message =
+                                err.response?.data?.message ||
+                                err.message ||
+                                'AI generation failed. Please try again.';
+                            setAiError(message);
+                        } finally {
+                            setAiLoading(false);
                         }
-                        setIsAIModalOpen(false);
                     }}
                 />
             )}
