@@ -1,0 +1,265 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #0c0f12;
+  --ink-muted: #5c6570;
+  --ink-faint: #8b939e;
+  --paper: #f3f5f7;
+  --surface: #ffffff;
+  --surface-raised: #eef1f4;
+  --hairline: #e2e6eb;
+  --hairline-strong: #c9d0d8;
+  --accent: #0f7a7a;
+  --accent-hover: #0c6565;
+  --accent-soft: #e6f4f4;
+  --danger: #c23b3b;
+  --success: #2f7a4d;
+  --canvas: #fafbfc;
+  --canvas-dot: #d8dee6;
+  --grid-dot-color: #d8dee6;
+  --sticky: #fff8dc;
+  --sticky-ink: #0c0f12;
+  --on-accent: #ffffff;
+  --atmosphere-glow: rgba(15, 122, 122, 0.12);
+  --atmosphere-mist: rgba(212, 222, 230, 0.45);
+  --atmosphere-base: #eef3f6;
+  --atmosphere-dot: #c5ced8;
+  --preview-shadow: 0 12px 40px rgba(12, 15, 18, 0.08), var(--shadow-soft);
+  --shadow-soft: 0 1px 2px rgba(12, 15, 18, 0.06);
+  --radius-control: 8px;
+  --radius-chrome: 8px;
+}
+
+.dark {
+  --ink: #f3f5f7;
+  --ink-muted: #a8b0ba;
+  --ink-faint: #7a8490;
+  --paper: #0c0f12;
+  --surface: #14181c;
+  --surface-raised: #1a1f24;
+  --hairline: #2a3138;
+  --hairline-strong: #3a434c;
+  --accent: #2a9e9e;
+  --accent-hover: #3db0b0;
+  --accent-soft: #143232;
+  --danger: #e05555;
+  --success: #4a9e6a;
+  --canvas: #0e1114;
+  --canvas-dot: #2a3138;
+  --grid-dot-color: #2a3138;
+  --sticky: #3a3628;
+  --sticky-ink: #f0ebe0;
+  --on-accent: #ffffff;
+  --atmosphere-glow: rgba(42, 158, 158, 0.16);
+  --atmosphere-mist: rgba(30, 48, 58, 0.65);
+  --atmosphere-base: #101418;
+  --atmosphere-dot: #2a3138;
+  --preview-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), var(--shadow-soft);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  /* Ensure Tailwind utilities resolve even if theme vars were inlined at build */
+  --color-ink: #f3f5f7;
+  --color-ink-muted: #a8b0ba;
+  --color-ink-faint: #7a8490;
+  --color-paper: #0c0f12;
+  --color-surface: #14181c;
+  --color-surface-raised: #1a1f24;
+  --color-hairline: #2a3138;
+  --color-hairline-strong: #3a434c;
+  --color-accent: #2a9e9e;
+  --color-accent-hover: #3db0b0;
+  --color-accent-soft: #143232;
+  --color-danger: #e05555;
+  --color-success: #4a9e6a;
+  --color-canvas: #0e1114;
+  --color-canvas-dot: #2a3138;
+  --color-sticky: #3a3628;
+  --color-sticky-ink: #f0ebe0;
+  --color-on-accent: #ffffff;
+  --color-primary: #2a9e9e;
+  --color-secondary: #3db0b0;
+}
+
+@theme {
+  --font-sans: "Geist Sans", "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Satoshi", "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-canvas: var(--canvas);
+  --color-canvas-dot: var(--canvas-dot);
+  --color-sticky: var(--sticky);
+  --color-sticky-ink: var(--sticky-ink);
+  --color-on-accent: var(--on-accent);
+
+  --color-primary: var(--accent);
+  --color-secondary: var(--accent-hover);
+}
+
+@custom-variant dark (&:is(.dark *));
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Soft sky / deep night atmosphere — theme-aware */
+.nimbus-atmosphere {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, var(--atmosphere-glow), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 20%, var(--atmosphere-mist), transparent 50%),
+    linear-gradient(180deg, var(--atmosphere-base) 0%, var(--paper) 45%, var(--paper) 100%);
+}
+
+.nimbus-atmosphere-aside {
+  background:
+    radial-gradient(ellipse 90% 60% at 20% 0%, var(--atmosphere-glow), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, var(--atmosphere-mist), transparent 50%),
+    linear-gradient(165deg, var(--atmosphere-base) 0%, var(--paper) 42%, var(--paper) 100%);
+}
+
+.nimbus-atmosphere-dash {
+  background:
+    radial-gradient(ellipse 80% 70% at 50% -20%, var(--atmosphere-glow), transparent 60%),
+    linear-gradient(180deg, var(--atmosphere-base) 0%, var(--paper) 100%);
+}
+
+.nimbus-atmosphere-dots {
+  background-image: radial-gradient(circle, var(--atmosphere-dot) 0.7px, transparent 0.7px);
+  background-size: 22px 22px;
+  opacity: 0.35;
+}
+
+/* Pointer cursor on interactive controls app-wide */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+summary,
+label[for],
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="file"]:not(:disabled),
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+/* Motion: landing hero */
+@keyframes nimbus-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nimbus-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes nimbus-rail-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nimbus-animate-hero {
+  animation: nimbus-fade-up 400ms ease-out both;
+}
+
+.nimbus-animate-hero-delay {
+  animation: nimbus-fade-up 400ms ease-out 80ms both;
+}
+
+.nimbus-animate-frame {
+  animation: nimbus-fade-up 400ms ease-out 140ms both;
+}
+
+.nimbus-animate-rail {
+  animation: nimbus-rail-in 180ms ease-out both;
+}
+
+.nimbus-animate-presence {
+  animation: nimbus-fade-in 150ms ease-out both;
+}
+
+/* Preview board — gentle idle float + lift while dragging */
+@keyframes nimbus-preview-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
+  }
+}
+
+.nimbus-preview-idle {
+  animation: nimbus-preview-float 4.5s ease-in-out infinite;
+}
+
+.nimbus-preview-lift {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nimbus-animate-hero,
+  .nimbus-animate-hero-delay,
+  .nimbus-animate-frame,
+  .nimbus-animate-rail,
+  .nimbus-animate-presence {
+    animation: none;
+  }
+
+  .nimbus-preview-idle {
+    animation: none;
+  }
+}
