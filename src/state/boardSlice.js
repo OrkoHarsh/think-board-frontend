@@ -26,14 +26,17 @@ export const fetchBoardDetails = createAsyncThunk('board/fetchBoardDetails', asy
     }
 });
 
-export const createBoard = createAsyncThunk('board/createBoard', async (title, { rejectWithValue }) => {
-    try {
-        const response = await boardApi.createBoard(title);
-        return response.data;
-    } catch (err) {
-        return rejectWithValue(err.response?.data?.message || 'Failed to create board');
+export const createBoard = createAsyncThunk(
+    'board/createBoard',
+    async ({ title, templateSlug }, { rejectWithValue }) => {
+        try {
+            const response = await boardApi.createBoard(title, templateSlug);
+            return response.data;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message || 'Failed to create board');
+        }
     }
-});
+);
 
 export const updateBoard = createAsyncThunk(
     'board/updateBoard',
@@ -73,6 +76,10 @@ const boardSlice = createSlice({
                 if (existing) {
                     Object.assign(existing, updates);
                 }
+                const now = new Date().toISOString();
+                state.activeBoard.updatedAt = now;
+                const summary = state.boards.find((b) => b.id === state.activeBoard.id);
+                if (summary) summary.updatedAt = now;
             }
         },
         addObjectOptimistically: (state, action) => {
@@ -87,14 +94,26 @@ const boardSlice = createSlice({
             if (!exists) {
                 state.activeBoard.objects.push(action.payload);
             }
+            const now = new Date().toISOString();
+            state.activeBoard.updatedAt = now;
+            const summary = state.boards.find((b) => b.id === state.activeBoard.id);
+            if (summary) summary.updatedAt = now;
         },
         replaceBoardObjectsOptimistically: (state, action) => {
             if (!state.activeBoard) return;
             state.activeBoard.objects = action.payload;
+            const now = new Date().toISOString();
+            state.activeBoard.updatedAt = now;
+            const summary = state.boards.find((b) => b.id === state.activeBoard.id);
+            if (summary) summary.updatedAt = now;
         },
         deleteObjectOptimistically: (state, action) => {
             if (state.activeBoard) {
                 state.activeBoard.objects = state.activeBoard.objects.filter((o) => o.id !== action.payload);
+                const now = new Date().toISOString();
+                state.activeBoard.updatedAt = now;
+                const summary = state.boards.find((b) => b.id === state.activeBoard.id);
+                if (summary) summary.updatedAt = now;
             }
         },
         rollbackUpdate: (state, action) => {
@@ -146,7 +165,13 @@ const boardSlice = createSlice({
             })
             // Create Board
             .addCase(createBoard.fulfilled, (state, action) => {
-                state.boards.push(action.payload);
+                const created = action.payload;
+                // Creation returns a full board; dashboard cards render previewObjects, so derive them
+                // here or a template-seeded board would look empty until the next fetch.
+                state.boards.push({
+                    ...created,
+                    previewObjects: created.previewObjects || created.objects || [],
+                });
             })
             // Update Board (rename)
             .addCase(updateBoard.fulfilled, (state, action) => {

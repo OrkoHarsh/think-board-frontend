@@ -64,10 +64,13 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
         return () => cancelAnimationFrame(frameId);
     }, [isAnimating]);
 
+    // x/y are stored as the top-left corner (matching sticky notes, UML nodes, thumbnails and the
+    // mermaid mapper). The group is placed at the centre so scaling animates outwards, so every
+    // read/write of a position has to convert between the two.
     const handleDragEnd = (e) => {
         onChange({
-            x: e.target.x(),
-            y: e.target.y(),
+            x: e.target.x() - shapeProps.width / 2,
+            y: e.target.y() - shapeProps.height / 2,
         });
     };
 
@@ -77,11 +80,15 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
         const scaleY = node.scaleY();
         node.scaleX(1);
         node.scaleY(1);
+
+        const nextWidth = Math.max(5, shapeProps.width * scaleX);
+        const nextHeight = Math.max(5, shapeProps.height * scaleY);
+
         onChange({
-            x: node.x(),
-            y: node.y(),
-            width: Math.max(5, shapeProps.width * scaleX),
-            height: Math.max(5, shapeProps.height * scaleY),
+            x: node.x() - nextWidth / 2,
+            y: node.y() - nextHeight / 2,
+            width: nextWidth,
+            height: nextHeight,
         });
     };
 
@@ -203,15 +210,50 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
     const fontStyle = shapeProps.fontStyle || 'normal';
     const textDecoration = shapeProps.textDecoration || '';
     const align = shapeProps.align || 'center';
-    const displayText = text || (text === '' ? '' : 'Double-click to edit');
+    const isPlaceholder = text == null || text === undefined;
+    const displayText = isPlaceholder ? 'Edit' : text;
+
+    // Keep label inside non-rectangular shapes (triangle/diamond taper inward)
+    const getTextBounds = () => {
+        switch (type) {
+            case 'triangle':
+                return {
+                    x: width * 0.2,
+                    y: height * 0.42,
+                    w: width * 0.6,
+                    h: height * 0.48,
+                };
+            case 'diamond':
+                return {
+                    x: width * 0.22,
+                    y: height * 0.28,
+                    w: width * 0.56,
+                    h: height * 0.44,
+                };
+            case 'circle':
+            case 'ellipse':
+                return {
+                    x: width * 0.18,
+                    y: height * 0.28,
+                    w: width * 0.64,
+                    h: height * 0.44,
+                };
+            default:
+                return { x: 8, y: 6, w: Math.max(8, width - 16), h: Math.max(8, height - 12) };
+        }
+    };
+    const tb = getTextBounds();
+    const fitFontSize = isPlaceholder
+        ? Math.min(textSize, Math.max(10, Math.floor(Math.min(tb.w, tb.h) / 3.2)))
+        : textSize;
 
     return (
         <>
             <Group
                 id={shapeProps.id}
                 ref={groupRef}
-                x={x}
-                y={y}
+                x={x + width / 2}
+                y={y + height / 2}
                 scaleX={entranceScale * breathScale}
                 scaleY={entranceScale * breathScale}
                 offsetX={width / 2}
@@ -223,24 +265,50 @@ const Shape = ({ shapeProps, isSelected, onSelect, onChange, isAnimating = false
                 onDblTap={handleDblClick}
                 onDragEnd={handleDragEnd}
                 onTransformEnd={handleTransformEnd}
+                clipFunc={(ctx) => {
+                    // Clip label to shape silhouette so overflow never paints outside
+                    if (type === 'circle' || type === 'ellipse') {
+                        ctx.beginPath();
+                        ctx.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+                        ctx.closePath();
+                    } else if (type === 'triangle') {
+                        ctx.beginPath();
+                        ctx.moveTo(width / 2, 0);
+                        ctx.lineTo(width, height);
+                        ctx.lineTo(0, height);
+                        ctx.closePath();
+                    } else if (type === 'diamond') {
+                        ctx.beginPath();
+                        ctx.moveTo(width / 2, 0);
+                        ctx.lineTo(width, height / 2);
+                        ctx.lineTo(width / 2, height);
+                        ctx.lineTo(0, height / 2);
+                        ctx.closePath();
+                    } else {
+                        ctx.beginPath();
+                        ctx.rect(0, 0, width, height);
+                        ctx.closePath();
+                    }
+                }}
             >
                 {renderShape()}
                 <Text
-                    key={`t-${fontFamily}-${textSize}-${align}-${fontStyle}-${textDecoration}`}
-                    x={0}
-                    y={0}
-                    width={width}
-                    height={height}
+                    key={`t-${fontFamily}-${fitFontSize}-${align}-${fontStyle}-${textDecoration}-${displayText}`}
+                    x={tb.x}
+                    y={tb.y}
+                    width={tb.w}
+                    height={tb.h}
                     text={displayText}
                     align={align}
                     verticalAlign="middle"
-                    fontSize={textSize}
+                    fontSize={fitFontSize}
                     fontFamily={fontFamily}
                     fontStyle={fontStyle}
                     textDecoration={textDecoration}
-                    fill={textColor}
+                    fill={isPlaceholder ? (textColor === '#ffffff' ? 'rgba(255,255,255,0.7)' : 'rgba(31,41,55,0.55)') : textColor}
                     listening={false}
                     wrap="word"
+                    ellipsis
                 />
             </Group>
         </>

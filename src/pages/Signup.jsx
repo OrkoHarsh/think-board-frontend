@@ -33,7 +33,7 @@ const Signup = () => {
                 <div className="relative z-10 flex flex-col h-full min-h-[320px] lg:min-h-screen px-8 sm:px-10 lg:px-12 py-8 lg:py-10">
                     <Link to="/" className="flex items-center gap-2.5 w-fit nimbus-animate-hero">
                         <BrandMark />
-                        <span className="font-display text-xl font-semibold tracking-tight">NimbusBoard</span>
+                        <span className="font-display text-xl font-semibold tracking-tight">ThinkBoard</span>
                     </Link>
 
                     <div className="flex-1 flex flex-col justify-center py-10 lg:py-12 max-w-lg">
@@ -62,7 +62,7 @@ const Signup = () => {
             <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-10 bg-surface">
                 <div className="w-full max-w-[380px] nimbus-animate-hero">
                     <h1 className="font-display text-[28px] font-semibold tracking-tight mb-1.5">Create account</h1>
-                    <p className="text-[14px] text-ink-muted mb-8">Set up your NimbusBoard workspace in a minute.</p>
+                    <p className="text-[14px] text-ink-muted mb-8">Set up your ThinkBoard workspace in a minute.</p>
 
                     <form className="space-y-5" onSubmit={handleSubmit}>
                         <div className="space-y-1.5">

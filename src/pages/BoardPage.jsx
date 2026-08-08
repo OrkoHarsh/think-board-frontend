@@ -7,6 +7,7 @@ import { useTheme } from '../hooks/useTheme';
 import CanvasStage from '../components/Canvas/CanvasStage';
 import Toolbar from '../components/Canvas/Toolbar';
 import LineToolPicker from '../components/Canvas/LineToolPicker';
+import { umlClassHeight } from '../utils/umlClass';
 import AskNimbusModal from '../components/AI/AskNimbusModal';
 import IconPalette from '../components/Icons/IconPalette';
 import ShareBoardModal from '../components/Share/ShareBoardModal';
@@ -14,6 +15,7 @@ import { generateId } from '../utils/helpers';
 import { aiApi } from '../services/api';
 import { preprocessMermaid } from '../utils/preprocessor';
 import { mermaidToBoardObjects } from '../utils/mermaidMapper';
+import { classDiagramToBoardObjects } from '../utils/classDiagramMapper';
 
 const BoardPage = () => {
     const { boardId } = useParams();
@@ -39,6 +41,54 @@ const BoardPage = () => {
 
     const { board, status, error, updateObject, addObject, deleteObject, replaceAllObjects, sendCursor, sendRaw } =
         useBoardData(boardId, presenceCallbacks);
+
+    const pastRef = useRef([]);
+    const futureRef = useRef([]);
+    const objectsSnapshotRef = useRef([]);
+
+    useEffect(() => {
+        objectsSnapshotRef.current = board?.objects || [];
+    }, [board?.objects]);
+
+    const pushHistory = useCallback(() => {
+        pastRef.current = [
+            ...pastRef.current.slice(-40),
+            JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])),
+        ];
+        futureRef.current = [];
+    }, []);
+
+    const handleUndo = useCallback(() => {
+        if (!pastRef.current.length) return;
+        const prev = pastRef.current.pop();
+        futureRef.current.push(JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])));
+        replaceAllObjects(prev);
+    }, [replaceAllObjects]);
+
+    const handleRedo = useCallback(() => {
+        if (!futureRef.current.length) return;
+        const next = futureRef.current.pop();
+        pastRef.current.push(JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])));
+        replaceAllObjects(next);
+    }, [replaceAllObjects]);
+
+    const addObjectTracked = useCallback((obj) => {
+        pushHistory();
+        addObject(obj);
+    }, [addObject, pushHistory]);
+
+    const deleteObjectTracked = useCallback((id) => {
+        pushHistory();
+        deleteObject(id);
+    }, [deleteObject, pushHistory]);
+
+    const updateObjectTracked = useCallback((id, updates) => {
+        // Snapshot once per style/content edit, not continuous drag coords-only
+        const keys = Object.keys(updates || {});
+        const isMoveOnly = keys.length > 0 && keys.every((k) => k === 'x' || k === 'y' || k === 'points');
+        if (!isMoveOnly) pushHistory();
+        updateObject(id, updates);
+    }, [updateObject, pushHistory]);
 
     // Ref to track current objects for immediate access
     const currentObjectsRef = useRef([]);
@@ -347,13 +397,39 @@ const BoardPage = () => {
 
     const handleAddShape = (type) => {
         const center = getCenterPos();
-        addObject({
+        if (type === 'umlClass') {
+            const umlWidth = 220;
+            const node = {
+                className: 'ClassName',
+                attributes: ['- id: UUID', '- name: String'],
+                methods: ['+ getName(): String'],
+            };
+            const umlHeight = umlClassHeight(node);
+            addObjectTracked({
+                id: generateId(),
+                type,
+                x: center.x - umlWidth / 2,
+                y: center.y - umlHeight / 2,
+                width: umlWidth,
+                height: umlHeight,
+                fill: (!selectedColor || selectedColor === 'transparent') ? '#FFFFFF' : selectedColor,
+                stroke: '#94A3B8',
+                fontFamily: 'Geist Sans, system-ui, sans-serif',
+                fontSize: 13,
+                ...node,
+            });
+            return;
+        }
+        // Ellipse must be wider than tall so it doesn't look like a circle
+        const width = type === 'ellipse' ? 160 : 100;
+        const height = type === 'ellipse' ? 90 : 100;
+        addObjectTracked({
             id: generateId(),
             type,
-            x: center.x - 50,
-            y: center.y - 50,
-            width: 100,
-            height: 100,
+            x: center.x - width / 2,
+            y: center.y - height / 2,
+            width,
+            height,
             fill: selectedColor,
             fontFamily: 'Geist Sans, system-ui, sans-serif',
             fontSize: 14,
@@ -365,12 +441,14 @@ const BoardPage = () => {
 
     const handleAddNote = () => {
         const center = getCenterPos();
-        addObject({
+        const fill = (!selectedColor || selectedColor === 'transparent') ? '#FEF3C7' : selectedColor;
+        addObjectTracked({
             id: generateId(),
             type: 'sticky',
             x: center.x - 75,
             y: center.y - 75,
             text: 'New Idea',
+            fill,
             fontFamily: 'Geist Sans, system-ui, sans-serif',
             fontSize: 16,
             fontStyle: 'normal',
@@ -381,12 +459,12 @@ const BoardPage = () => {
 
     const handleAddIcon = (icon) => {
         const center = getCenterPos();
-        addObject({ id: generateId(), type: 'icon', x: center.x - 32, y: center.y - 32, width: 64, height: 64, iconKey: icon.key, label: icon.label });
+        addObjectTracked({ id: generateId(), type: 'icon', x: center.x - 32, y: center.y - 32, width: 64, height: 64, iconKey: icon.key, label: icon.label });
     };
 
     const handleAddText = () => {
         const center = getCenterPos();
-        addObject({
+        addObjectTracked({
             id: generateId(),
             type: 'text',
             x: center.x - 100,
@@ -469,7 +547,7 @@ const BoardPage = () => {
                                 ? 'text-ink-faint cursor-not-allowed'
                                 : 'text-ink-muted hover:bg-accent-soft hover:text-accent hover:border-accent/30'
                         }`}
-                        title="Ask NimbusBoard"
+                        title="Ask ThinkBoard"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
@@ -653,11 +731,12 @@ const BoardPage = () => {
                     <CanvasStage
                         ref={canvasRef}
                         objects={board.objects || []}
-                        onUpdate={isReadOnly ? () => {} : updateObject}
-                        onDelete={isReadOnly ? () => {} : deleteObject}
-                        onAdd={isReadOnly ? () => {} : addObject}
+                        onUpdate={isReadOnly ? () => {} : updateObjectTracked}
+                        onDelete={isReadOnly ? () => {} : deleteObjectTracked}
+                        onAdd={isReadOnly ? () => {} : addObjectTracked}
                         onSelect={(id) => id}
                         activeTool={isReadOnly ? 'hand' : activeTool}
+                        drawColor={selectedColor}
                         connectorDefaults={connectorDefaults}
                         stageScale={stageScale}
                         stagePos={stagePos}
@@ -667,6 +746,9 @@ const BoardPage = () => {
                         onCursorMove={sendCursor}
                         animKey={animKey}
                         isAnimating={isAnimating}
+                        onUndo={isReadOnly ? undefined : handleUndo}
+                        onRedo={isReadOnly ? undefined : handleRedo}
+                        onBeforeMutate={isReadOnly ? undefined : pushHistory}
                     />
                 </div>
             </div>
@@ -682,21 +764,33 @@ const BoardPage = () => {
                             setIsAIModalOpen(false);
                         }
                     }}
-                    onGenerate={async (prompt) => {
+                    onGenerate={async (prompt, requestedType) => {
                         setAiLoading(true);
                         setAiError(null);
                         try {
                             if (!board?.id) {
                                 throw new Error('Board is still loading. Please wait and try again.');
                             }
-                            const response = await aiApi.generate(boardId, prompt);
+                            const response = await aiApi.generate(boardId, prompt, requestedType);
                             const mermaid = response.data?.mermaid;
                             if (!mermaid) {
                                 throw new Error('AI returned empty diagram');
                             }
                             const center = getCenterPos();
-                            const cleanedMermaid = preprocessMermaid(mermaid);
-                            const mappedObjects = await mermaidToBoardObjects(cleanedMermaid, center.x, center.y);
+                            const resolvedType = response.data?.diagramType || requestedType || 'HLD';
+
+                            let mappedObjects;
+                            if (resolvedType === 'CLASS') {
+                                mappedObjects = classDiagramToBoardObjects(mermaid, center.x, center.y);
+                            } else if (resolvedType === 'FLOWCHART') {
+                                // Flowcharts keep their decision shapes and edge labels, which the
+                                // HLD preprocessor is not designed to preserve.
+                                mappedObjects = await mermaidToBoardObjects(mermaid, center.x, center.y);
+                            } else {
+                                const cleanedMermaid = preprocessMermaid(mermaid);
+                                mappedObjects = await mermaidToBoardObjects(cleanedMermaid, center.x, center.y);
+                            }
+
                             if (!mappedObjects.length) {
                                 throw new Error('Could not render diagram from AI response. Try a simpler prompt.');
                             }
@@ -707,6 +801,7 @@ const BoardPage = () => {
                                 id: `ai-${runId}-${obj.id}`,
                             }));
 
+                            pushHistory();
                             replaceAllObjects(objects);
                             // Close the modal early so its backdrop can't visually block the UI.
                             setIsAIModalOpen(false);

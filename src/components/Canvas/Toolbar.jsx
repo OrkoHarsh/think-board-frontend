@@ -75,6 +75,18 @@ const Toolbar = ({
                     icon: <ellipse cx="12" cy="12" rx="10" ry="6" />,
                     action: () => onAddShape('ellipse'),
                 },
+                {
+                    id: 'umlClass',
+                    label: 'Class (UML)',
+                    icon: (
+                        <>
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="3" y1="9" x2="21" y2="9" />
+                            <line x1="3" y1="15" x2="21" y2="15" />
+                        </>
+                    ),
+                    action: () => onAddShape('umlClass'),
+                },
             ],
         },
         {
@@ -119,6 +131,16 @@ const Toolbar = ({
                     id: 'freehand',
                     label: 'Freehand Pen',
                     icon: <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />,
+                },
+                {
+                    id: 'laser',
+                    label: 'Laser pointer',
+                    icon: (
+                        <>
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                        </>
+                    ),
                 },
                 {
                     id: 'eraser',
@@ -208,7 +230,7 @@ const Toolbar = ({
             </button>
 
             <div className="w-px h-6 bg-hairline mx-1 shrink-0" />
-            <div className="px-1 flex items-center">
+            <div className="px-1 flex items-center" title={activeTool === 'freehand' || activeTool === 'laser' ? 'Pen / laser color' : 'Shape / sticky / pen color'}>
                 <ColorPicker selectedColor={selectedColor} onChange={onColorChange} />
             </div>
         </div>

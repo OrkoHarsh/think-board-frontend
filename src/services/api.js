@@ -147,9 +147,9 @@ export const boardApi = {
         const response = await api.get(`/boards/${boardId}`);
         return { data: response.data.data }; // { id, title, objects }
     },
-    createBoard: async (title) => {
-        const response = await api.post('/boards', { title });
-        return { data: response.data.data }; // board object
+    createBoard: async (title, templateSlug) => {
+        const response = await api.post('/boards', { title, templateSlug: templateSlug || null });
+        return { data: response.data.data }; // board object, pre-populated when a template was used
     },
     updateBoard: async (boardId, data) => {
         const response = await api.put(`/boards/${boardId}`, data);
@@ -177,10 +177,17 @@ export const boardApi = {
     },
 };
 
+export const templateApi = {
+    list: async () => {
+        const response = await api.get('/templates');
+        return { data: response.data.data }; // array of { slug, name, description, category, objects }
+    },
+};
+
 export const aiApi = {
-    generate: async (boardId, prompt) => {
-        const response = await api.post('/ai/generate', { boardId, prompt });
-        return { data: response.data.data }; // { nodes, edges }
+    generate: async (boardId, prompt, diagramType) => {
+        const response = await api.post('/ai/generate', { boardId, prompt, diagramType });
+        return { data: response.data.data }; // { mermaid, diagramType }
     },
 };
 

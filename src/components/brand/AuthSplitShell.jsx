@@ -20,7 +20,7 @@ const AuthSplitShell = ({
             <div className="relative z-10 flex flex-col h-full min-h-[280px] lg:min-h-screen px-8 sm:px-10 lg:px-12 py-8 lg:py-10">
                 <Link to={brandTo} className="flex items-center gap-2.5 w-fit nimbus-animate-hero">
                     <BrandMark />
-                    <span className="font-display text-xl font-semibold tracking-tight">NimbusBoard</span>
+                    <span className="font-display text-xl font-semibold tracking-tight">ThinkBoard</span>
                 </Link>
 
                 <div className="flex-1 flex flex-col justify-center py-10 lg:py-12 max-w-lg">

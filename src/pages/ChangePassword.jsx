@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { authApi } from '../services/api';
 import { logout } from '../state/authSlice';
 import BrandMark from '../components/brand/BrandMark';
+import UserMenu from '../components/account/UserMenu';
 import { useTheme } from '../hooks/useTheme';
 
 const fieldClass =
@@ -66,7 +67,7 @@ const ChangePassword = () => {
                     <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
                         <BrandMark className="w-7 h-7" />
                         <span className="font-display text-[15px] font-semibold tracking-tight truncate">
-                            NimbusBoard
+                            ThinkBoard
                         </span>
                     </Link>
                     <span className="hidden sm:inline text-ink-faint text-[13px] mx-0.5">/</span>
@@ -100,20 +101,8 @@ const ChangePassword = () => {
                             </svg>
                         )}
                     </button>
-                    <div className="flex items-center gap-2.5 pl-1 border-l border-hairline ml-1">
-                        <div className="w-8 h-8 rounded-full bg-accent text-on-accent text-[12px] font-semibold flex items-center justify-center">
-                            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                        </div>
-                        <div className="hidden sm:block leading-tight">
-                            <p className="text-[12px] font-medium text-ink truncate max-w-[120px]">{user?.name}</p>
-                            <button
-                                type="button"
-                                onClick={handleLogout}
-                                className="text-[11px] text-ink-faint hover:text-ink-muted"
-                            >
-                                Log out
-                            </button>
-                        </div>
+                    <div className="ml-1 border-l border-hairline pl-2">
+                        <UserMenu user={user} onLogout={handleLogout} />
                     </div>
                 </div>
             </header>

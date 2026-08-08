@@ -81,7 +81,7 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
     const shadowBlurBase = isDark ? 14 : 8;
     const shadowOpacityBase = isDark ? 0.25 : 0.08;
 
-    // Load icon image
+    // Load icon image — re-fetch when theme changes so MDI monochrome colors update
     useEffect(() => {
         const url = getIconUrl(iconKey);
         if (!url) return;
@@ -92,7 +92,7 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
         img.onload = () => { if (!cancelled) setImage(img); };
         img.onerror = () => { if (!cancelled) setImage(null); };
         return () => { cancelled = true; };
-    }, [iconKey]);
+    }, [iconKey, isDark]);
 
     // Entrance animation
     useEffect(() => {
@@ -220,12 +220,12 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
                 />
             )}
 
-            {/* Label */}
+            {/* Label — wider than icon so long names aren't clipped */}
             <Text
                 text={label || ''}
-                x={0}
+                x={-(Math.max(width, Math.min(220, (label || '').length * 6.5)) - width) / 2}
                 y={height + LABEL_GAP}
-                width={width}
+                width={Math.max(width, Math.min(220, (label || '').length * 6.5))}
                 height={LABEL_HEIGHT}
                 fontSize={10}
                 fontFamily="'Inter', system-ui, -apple-system, sans-serif"
@@ -233,7 +233,6 @@ const AnimatedIconNode = ({ iconProps, isSelected, onSelect, onChange, pulseDela
                 fill={labelFill}
                 align="center"
                 verticalAlign="middle"
-                ellipsis
                 wrap="none"
                 listening={false}
             />

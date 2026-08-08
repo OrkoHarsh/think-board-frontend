@@ -6,7 +6,7 @@ const NotFound = () => {
             <p className="font-display text-7xl font-semibold tracking-tight text-accent">404</p>
             <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight">Page not found</h1>
             <p className="mt-2 text-[15px] text-ink-muted max-w-sm text-center">
-                That route doesn&apos;t exist in NimbusBoard.
+                That route doesn&apos;t exist in ThinkBoard.
             </p>
             <Link
                 to="/"

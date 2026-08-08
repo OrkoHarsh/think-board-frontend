@@ -13,7 +13,7 @@ const LandingPage = () => {
                         <div className="flex items-center gap-3 mb-8">
                             <BrandMark className="w-11 h-11" />
                             <span className="font-display text-4xl sm:text-5xl font-semibold tracking-tight text-ink">
-                                NimbusBoard
+                                ThinkBoard
                             </span>
                         </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nimbusConfirm } from '../../utils/nimbusDialog';
 import { formatBoardDate } from '../../utils/boardDate';
+import BoardThumbnail from './BoardThumbnail';
 
 const BoardCard = ({ board, onRename, onDelete }) => {
     const [menuOpen, setMenuOpen] = useState(false);
@@ -84,10 +85,16 @@ const BoardCard = ({ board, onRename, onDelete }) => {
         }
     };
 
+    const previewObjects = board.previewObjects || board.objects || [];
+
     return (
-        <li className={`relative group ${isBusy ? 'opacity-60 pointer-events-none' : ''}`}>
+        <li
+            className={`relative group ${menuOpen ? 'z-50' : 'z-0'} ${
+                isBusy ? 'opacity-60 pointer-events-none' : ''
+            }`}
+        >
             <div
-                className="h-full rounded-[10px] border border-hairline bg-surface overflow-hidden transition-[box-shadow,border-color,transform] duration-200 hover:border-hairline-strong hover:-translate-y-0.5"
+                className="h-full rounded-[10px] border border-hairline bg-surface transition-[box-shadow,border-color,transform] duration-200 hover:border-hairline-strong hover:-translate-y-0.5"
                 style={{ boxShadow: 'var(--shadow-soft)' }}
             >
                 <Link
@@ -97,24 +104,10 @@ const BoardCard = ({ board, onRename, onDelete }) => {
                         if (isEditing) e.preventDefault();
                     }}
                 >
-                    {/* Honest preview: open canvas, no fake content */}
-                    <div
-                        className="relative h-[120px] bg-canvas border-b border-hairline"
-                        style={{
-                            backgroundImage:
-                                'radial-gradient(circle, var(--canvas-dot) 0.7px, transparent 0.7px)',
-                            backgroundSize: '16px 16px',
-                        }}
-                    >
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-[11px] text-ink-faint/80 font-medium tracking-wide">
-                                Canvas
-                            </span>
-                        </div>
-                    </div>
+                    <BoardThumbnail objects={previewObjects} size="card" />
                 </Link>
 
-                <div className="p-3.5 flex items-start gap-2">
+                <div className="p-3.5 flex items-start gap-2 relative">
                     <div className="flex-1 min-w-0">
                         {isEditing ? (
                             <input
@@ -160,6 +153,7 @@ const BoardCard = ({ board, onRename, onDelete }) => {
                             className="w-8 h-8 rounded-[6px] text-ink-faint hover:text-ink-muted hover:bg-surface-raised flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity"
                             title="Board options"
                             aria-label="Board options"
+                            aria-expanded={menuOpen}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                 <circle cx="12" cy="5" r="1.75" />
@@ -170,11 +164,13 @@ const BoardCard = ({ board, onRename, onDelete }) => {
 
                         {menuOpen && (
                             <div
-                                className="absolute right-0 top-9 z-20 w-36 bg-surface border border-hairline rounded-[8px] py-1 overflow-hidden"
-                                style={{ boxShadow: '0 8px 24px rgba(12,15,18,0.1)' }}
+                                className="absolute right-0 top-9 z-[100] w-36 bg-surface border border-hairline rounded-[8px] py-1"
+                                style={{ boxShadow: '0 12px 32px rgba(12,15,18,0.14)' }}
+                                role="menu"
                             >
                                 <button
                                     type="button"
+                                    role="menuitem"
                                     onClick={startRename}
                                     className="w-full px-3 py-1.5 text-left text-[13px] text-ink hover:bg-surface-raised"
                                 >
@@ -182,6 +178,7 @@ const BoardCard = ({ board, onRename, onDelete }) => {
                                 </button>
                                 <button
                                     type="button"
+                                    role="menuitem"
                                     onClick={handleDelete}
                                     className="w-full px-3 py-1.5 text-left text-[13px] text-danger hover:bg-surface-raised"
                                 >

@@ -8,6 +8,17 @@ const LABEL_GAP = 4;
 const IconNode = ({ iconProps, isSelected, onSelect, onChange }) => {
     const { id, x, y, width = 64, height = 64, iconKey, label } = iconProps;
     const [image, setImage] = useState(null);
+    const [isDark, setIsDark] = useState(
+        typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+    );
+
+    useEffect(() => {
+        const checkDark = () => setIsDark(document.documentElement.classList.contains('dark'));
+        checkDark();
+        const observer = new MutationObserver(checkDark);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         const url = getIconUrl(iconKey);
@@ -19,7 +30,7 @@ const IconNode = ({ iconProps, isSelected, onSelect, onChange }) => {
         img.onload = () => { if (!cancelled) setImage(img); };
         img.onerror = () => { if (!cancelled) setImage(null); };
         return () => { cancelled = true; };
-    }, [iconKey]);
+    }, [iconKey, isDark]);
 
     const handleDragEnd = (e) => {
         onChange({ x: e.target.x(), y: e.target.y() });

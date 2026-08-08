@@ -3,9 +3,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchBoards, createBoard, updateBoard, deleteBoard } from '../../state/boardSlice';
 import { logout } from '../../state/authSlice';
 import BoardCard from './BoardCard';
+import BoardThumbnail from './BoardThumbnail';
+import TemplatePickerModal from './TemplatePickerModal';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../hooks/useTheme';
 import BrandMark from '../brand/BrandMark';
+import UserMenu from '../account/UserMenu';
 import { nimbusAlert } from '../../utils/nimbusDialog';
 import { boardTimestamp, formatBoardDate } from '../../utils/boardDate';
 
@@ -15,7 +18,6 @@ const Dashboard = () => {
     const { boards, status, error } = useSelector((state) => state.board);
     const { user } = useSelector((state) => state.auth);
     const [isCreating, setIsCreating] = useState(false);
-    const [newBoardTitle, setNewBoardTitle] = useState('');
     const [query, setQuery] = useState('');
     const [isDark, toggleTheme] = useTheme();
 
@@ -23,12 +25,13 @@ const Dashboard = () => {
         dispatch(fetchBoards());
     }, [dispatch]);
 
-    const handleCreateBoard = async (e) => {
-        e.preventDefault();
-        if (!newBoardTitle.trim()) return;
-        await dispatch(createBoard(newBoardTitle));
-        setNewBoardTitle('');
+    const handleCreateBoard = async (title, templateSlug) => {
+        const result = await dispatch(createBoard({ title, templateSlug }));
+        if (createBoard.rejected.match(result)) return false;
+
         setIsCreating(false);
+        navigate(`/board/${result.payload.id}`);
+        return true;
     };
 
     const handleLogout = () => {
@@ -74,7 +77,7 @@ const Dashboard = () => {
                 <div className="flex items-center gap-2.5 min-w-0">
                     <BrandMark className="w-7 h-7" />
                     <span className="font-display text-[15px] font-semibold tracking-tight truncate">
-                        NimbusBoard
+                        ThinkBoard
                     </span>
                 </div>
 
@@ -103,29 +106,8 @@ const Dashboard = () => {
                             </svg>
                         )}
                     </button>
-                    <div className="flex items-center gap-2.5 pl-1 border-l border-hairline ml-1">
-                        <div className="w-8 h-8 rounded-full bg-accent text-on-accent text-[12px] font-semibold flex items-center justify-center">
-                            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-                        </div>
-                        <div className="hidden sm:block leading-tight">
-                            <p className="text-[12px] font-medium text-ink truncate max-w-[120px]">{user?.name}</p>
-                            <div className="flex items-center gap-2">
-                                <Link
-                                    to="/change-password"
-                                    className="text-[11px] text-ink-faint hover:text-ink-muted"
-                                >
-                                    Change password
-                                </Link>
-                                <span className="text-ink-faint text-[10px]">·</span>
-                                <button
-                                    type="button"
-                                    onClick={handleLogout}
-                                    className="text-[11px] text-ink-faint hover:text-ink-muted"
-                                >
-                                    Log out
-                                </button>
-                            </div>
-                        </div>
+                    <div className="ml-1 border-l border-hairline pl-2">
+                        <UserMenu user={user} onLogout={handleLogout} />
                     </div>
                 </div>
             </header>
@@ -159,19 +141,11 @@ const Dashboard = () => {
                         style={{ boxShadow: 'var(--shadow-soft)' }}
                     >
                         <div className="flex flex-col sm:flex-row">
-                            <div
-                                className="sm:w-[42%] h-[140px] sm:h-auto min-h-[140px] bg-canvas border-b sm:border-b-0 sm:border-r border-hairline relative"
-                                style={{
-                                    backgroundImage:
-                                        'radial-gradient(circle, var(--canvas-dot) 0.7px, transparent 0.7px)',
-                                    backgroundSize: '18px 18px',
-                                }}
-                            >
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <span className="text-[12px] text-ink-faint font-medium tracking-wide">
-                                        Open canvas
-                                    </span>
-                                </div>
+                            <div className="sm:w-[42%] h-[140px] sm:h-auto min-h-[140px] border-b sm:border-b-0 sm:border-r border-hairline relative">
+                                <BoardThumbnail
+                                    objects={continueBoard.previewObjects || continueBoard.objects || []}
+                                    size="banner"
+                                />
                             </div>
                             <div className="flex-1 p-5 sm:p-6 flex flex-col justify-center gap-3">
                                 <div className="flex items-center gap-2">
@@ -213,7 +187,7 @@ const Dashboard = () => {
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             className="w-full h-11 pl-10 pr-3 rounded-[8px] border border-hairline bg-surface text-[14px] text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent/25 focus:border-accent"
-                            placeholder="Search boards…"
+                            placeholder="Search boardsâ€¦"
                         />
                     </div>
                     <div className="flex items-center gap-2 text-[12px] text-ink-muted shrink-0">
@@ -224,38 +198,10 @@ const Dashboard = () => {
                 </div>
 
                 {isCreating && (
-                    <form
-                        onSubmit={handleCreateBoard}
-                        className="mb-6 flex flex-col sm:flex-row gap-2 p-4 rounded-[10px] border border-hairline bg-surface"
-                        style={{ boxShadow: 'var(--shadow-soft)' }}
-                    >
-                        <input
-                            type="text"
-                            value={newBoardTitle}
-                            onChange={(e) => setNewBoardTitle(e.target.value)}
-                            placeholder="Name your board…"
-                            className="flex-1 h-10 px-3 rounded-[8px] border border-hairline bg-paper text-[14px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/25 focus:border-accent"
-                            autoFocus
-                        />
-                        <div className="flex gap-2">
-                            <button
-                                type="submit"
-                                className="h-10 px-4 rounded-[8px] bg-ink text-surface text-[13px] font-medium"
-                            >
-                                Create
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsCreating(false);
-                                    setNewBoardTitle('');
-                                }}
-                                className="h-10 px-4 rounded-[8px] border border-hairline text-[13px] text-ink-muted hover:bg-surface-raised"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </form>
+                    <TemplatePickerModal
+                        onCreate={handleCreateBoard}
+                        onClose={() => setIsCreating(false)}
+                    />
                 )}
 
                 {status === 'loading' ? (

@@ -11,8 +11,39 @@ const SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
 
 const TEXT_TYPES = new Set(['text', 'sticky', 'rect', 'circle', 'triangle', 'diamond', 'ellipse']);
 
+export const STICKY_COLORS = [
+    { label: 'Yellow', value: '#FEF3C7' },
+    { label: 'Peach', value: '#FFEDD5' },
+    { label: 'Pink', value: '#FCE7F3' },
+    { label: 'Mint', value: '#D1FAE5' },
+    { label: 'Sky', value: '#DBEAFE' },
+    { label: 'Lilac', value: '#EDE9FE' },
+    { label: 'Glass', value: 'rgba(255,255,255,0.28)' },
+    { label: 'Amber glass', value: 'rgba(251,191,36,0.32)' },
+    { label: 'Rose glass', value: 'rgba(244,63,94,0.28)' },
+    { label: 'Blue glass', value: 'rgba(59,130,246,0.28)' },
+];
+
 export function isTextCapable(obj) {
     return obj && TEXT_TYPES.has(obj.type);
+}
+
+export function toggleBoldStyle(fontStyle = 'normal') {
+    const hasBold = fontStyle.includes('bold');
+    const hasItalic = fontStyle.includes('italic');
+    if (hasBold && hasItalic) return 'italic';
+    if (hasBold) return 'normal';
+    if (hasItalic) return 'bold italic';
+    return 'bold';
+}
+
+export function toggleItalicStyle(fontStyle = 'normal') {
+    const hasBold = fontStyle.includes('bold');
+    const hasItalic = fontStyle.includes('italic');
+    if (hasBold && hasItalic) return 'bold';
+    if (hasItalic) return 'normal';
+    if (hasBold) return 'bold italic';
+    return 'italic';
 }
 
 /** Allow selects/inputs to receive focus; block focus steal on buttons only. */
@@ -41,24 +72,8 @@ const TextFormatBar = ({ object, anchor, onChange }) => {
     const hasItalic = fontStyle.includes('italic');
     const hasUnderline = textDecoration === 'underline';
 
-    const toggleBold = () => {
-        let next = 'normal';
-        if (hasBold && hasItalic) next = 'italic';
-        else if (hasBold) next = 'normal';
-        else if (hasItalic) next = 'bold italic';
-        else next = 'bold';
-        onChange({ fontStyle: next });
-    };
-
-    const toggleItalic = () => {
-        let next = 'normal';
-        if (hasBold && hasItalic) next = 'bold';
-        else if (hasItalic) next = 'normal';
-        else if (hasBold) next = 'bold italic';
-        else next = 'italic';
-        onChange({ fontStyle: next });
-    };
-
+    const toggleBold = () => onChange({ fontStyle: toggleBoldStyle(fontStyle) });
+    const toggleItalic = () => onChange({ fontStyle: toggleItalicStyle(fontStyle) });
     const toggleUnderline = () => {
         onChange({ textDecoration: hasUnderline ? '' : 'underline' });
     };
@@ -67,7 +82,7 @@ const TextFormatBar = ({ object, anchor, onChange }) => {
     const sizeOptions = SIZES.includes(fontSize) ? SIZES : [...SIZES, fontSize].sort((a, b) => a - b);
 
     const top = Math.max(8, anchor.top - 48);
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - 440));
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - (object.type === 'sticky' ? 560 : 440)));
 
     return createPortal(
         <div
@@ -126,6 +141,28 @@ const TextFormatBar = ({ object, anchor, onChange }) => {
                     {a.label}
                 </button>
             ))}
+
+            {object.type === 'sticky' && (
+                <>
+                    <div className="w-px h-5 bg-hairline mx-0.5" />
+                    <div className="flex items-center gap-1" title="Sticky color">
+                        {STICKY_COLORS.map((c) => (
+                            <button
+                                key={c.value}
+                                type="button"
+                                onClick={() => onChange({ fill: c.value })}
+                                className={`w-5 h-5 rounded-[4px] border transition-transform hover:scale-110 ${
+                                    (object.fill || '#FEF3C7') === c.value
+                                        ? 'ring-2 ring-accent ring-offset-1 border-transparent'
+                                        : 'border-hairline'
+                                }`}
+                                style={{ backgroundColor: c.value }}
+                                title={c.label}
+                            />
+                        ))}
+                    </div>
+                </>
+            )}
         </div>,
         document.body
     );

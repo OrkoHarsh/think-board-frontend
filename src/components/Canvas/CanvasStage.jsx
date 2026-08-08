@@ -2,15 +2,17 @@ import { useState, useEffect, useLayoutEffect, useRef, forwardRef, useImperative
 import { Stage, Layer, Line, Arrow as KonvaArrow, Rect as KonvaRect, Transformer, Group, Path, Rect as KonvaRectLabel, Text as KonvaText } from 'react-konva';
 import Shape from './Shape';
 import StickyNote from './StickyNote';
+import UmlClassNode from './UmlClassNode';
 import Connector from './Connector';
 import AnimatedConnector from './AnimatedConnector';
 import AnimatedIconNode from './AnimatedIconNode';
 import AnimatedRect from './AnimatedRect';
-import TextFormatBar, { isTextCapable } from './TextFormatBar';
+import TextFormatBar, { isTextCapable, toggleBoldStyle, toggleItalicStyle } from './TextFormatBar';
 import ConnectorStyleBar from './ConnectorStyleBar';
 import { generateId } from '../../utils/helpers';
 
 const DRAW_TOOLS = ['line', 'arrow', 'freehand'];
+const LASER_FADE_MS = 900;
 
 /** Objects + selection UI — memoized so remote cursor ticks don't reset Konva drag positions */
 const ObjectsLayer = memo(function ObjectsLayer({
@@ -37,6 +39,17 @@ const ObjectsLayer = memo(function ObjectsLayer({
                         <StickyNote
                             key={`${obj.id}-sticky-${animKey}`}
                             noteProps={obj}
+                            isSelected={isSelected}
+                            onSelect={(e) => onObjSelect(obj.id, e)}
+                            onChange={(a) => onUpdate(obj.id, a)}
+                        />
+                    );
+                }
+                if (obj.type === 'umlClass') {
+                    return (
+                        <UmlClassNode
+                            key={`${obj.id}-uml-${animKey}`}
+                            nodeProps={obj}
                             isSelected={isSelected}
                             onSelect={(e) => onObjSelect(obj.id, e)}
                             onChange={(a) => onUpdate(obj.id, a)}
@@ -173,6 +186,7 @@ const CanvasStage = forwardRef(({
     onDelete,
     onAdd,
     activeTool,
+    drawColor = '#3B82F6',
     connectorDefaults = {
         lineStyle: 'solid',
         startMarker: 'none',
@@ -187,10 +201,14 @@ const CanvasStage = forwardRef(({
     onCursorMove,
     animKey = 0,
     isAnimating = false,
+    onUndo,
+    onRedo,
+    onBeforeMutate,
 }, ref) => {
     const [selectedIds, setSelectedIds] = useState([]);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawPoints, setDrawPoints] = useState([]);
+    const [laserTrails, setLaserTrails] = useState([]);
     const [selectionBox, setSelectionBox] = useState(null);
     const [isDraggingSelect, setIsDraggingSelect] = useState(false);
     const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
@@ -202,6 +220,7 @@ const CanvasStage = forwardRef(({
     const cycleIndexRef = useRef(0);
     const lastPositionsRef = useRef({});
     const prevCountRef = useRef(0);
+    const laserActiveRef = useRef(null);
 
     // Debug: log when objects change
     useEffect(() => {
@@ -221,6 +240,7 @@ const CanvasStage = forwardRef(({
     }), []);
 
     const isDrawMode = DRAW_TOOLS.includes(activeTool);
+    const isLaserMode = activeTool === 'laser';
     const isPanMode = activeTool === 'hand';
     const isSelectMode = activeTool === 'select';
 
@@ -261,11 +281,53 @@ const CanvasStage = forwardRef(({
         }, {});
     }, [objects]);
 
-    // Keyboard: Delete + Arrow key movement
+    // Fade laser trails
+    useEffect(() => {
+        if (!laserTrails.length) return undefined;
+        const id = window.setInterval(() => {
+            const now = Date.now();
+            setLaserTrails((prev) => prev.filter((t) => now - t.born < LASER_FADE_MS));
+        }, 50);
+        return () => window.clearInterval(id);
+    }, [laserTrails.length]);
+
+    // Keyboard: Delete, arrows, formatting, undo/redo
     useEffect(() => {
         const handleKeyDown = (e) => {
             const tag = document.activeElement?.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+
+            const mod = e.ctrlKey || e.metaKey;
+
+            if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                onUndo?.();
+                return;
+            }
+            if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                onRedo?.();
+                return;
+            }
+
+            if (mod && selectedIds.length) {
+                const key = e.key.toLowerCase();
+                if (key === 'b' || key === 'i' || key === 'u') {
+                    e.preventDefault();
+                    selectedIds.forEach((id) => {
+                        const obj = objects.find((o) => o.id === id);
+                        if (!isTextCapable(obj)) return;
+                        if (key === 'b') onUpdate(id, { fontStyle: toggleBoldStyle(obj.fontStyle) });
+                        if (key === 'i') onUpdate(id, { fontStyle: toggleItalicStyle(obj.fontStyle) });
+                        if (key === 'u') {
+                            onUpdate(id, {
+                                textDecoration: obj.textDecoration === 'underline' ? '' : 'underline',
+                            });
+                        }
+                    });
+                    return;
+                }
+            }
 
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length) {
                 selectedIds.forEach(id => onDelete(id));
@@ -284,14 +346,13 @@ const CanvasStage = forwardRef(({
             if (dx === 0 && dy === 0) return;
 
             selectedIds.forEach(id => {
-                // Read from ref to avoid stale closure on rapid key holds
                 const pos = lastPositionsRef.current[id] || { x: 0, y: 0 };
                 onUpdate(id, { x: pos.x + dx, y: pos.y + dy });
             });
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedIds, onDelete, onUpdate, onSelect]);
+    }, [selectedIds, onDelete, onUpdate, onSelect, objects, onUndo, onRedo, onBeforeMutate]);
 
     const handleWheel = (e) => {
         e.evt.preventDefault();
@@ -303,9 +364,10 @@ const CanvasStage = forwardRef(({
             x: (pointer.x - stage.x()) / oldScale,
             y: (pointer.y - stage.y()) / oldScale,
         };
+        // Wheel / trackpad: deltaY > 0 → zoom in; browsers send ctrlKey on pinch
         let direction = e.evt.deltaY > 0 ? 1 : -1;
         if (e.evt.ctrlKey) direction = -direction;
-        const newScale = direction > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+        const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
         setStageScale(newScale);
         setStagePos({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
     };
@@ -385,6 +447,16 @@ const CanvasStage = forwardRef(({
 
     const handleMouseDown = (e) => {
         const clickedOnEmpty = e.target === e.target.getStage();
+        if (!clickedOnEmpty && !isLaserMode) return;
+
+        if (isLaserMode) {
+            const pos = getWorldPos(e.target.getStage().getPointerPosition());
+            const trail = { id: generateId(), points: [pos.x, pos.y], born: Date.now() };
+            laserActiveRef.current = trail.id;
+            setLaserTrails((prev) => [...prev, trail]);
+            return;
+        }
+
         if (!clickedOnEmpty) return;
 
         if (isDrawMode) {
@@ -416,6 +488,16 @@ const CanvasStage = forwardRef(({
         // Emit cursor position to collaborators
         if (onCursorMove) onCursorMove(pos.x, pos.y);
 
+        if (isLaserMode && laserActiveRef.current) {
+            const activeId = laserActiveRef.current;
+            setLaserTrails((prev) =>
+                prev.map((t) =>
+                    t.id === activeId ? { ...t, points: [...t.points, pos.x, pos.y], born: Date.now() } : t
+                )
+            );
+            return;
+        }
+
         if (isDrawing) {
             if (activeTool === 'freehand') {
                 setDrawPoints(prev => [...prev, pos.x, pos.y]);
@@ -430,6 +512,11 @@ const CanvasStage = forwardRef(({
     };
 
     const handleMouseUp = () => {
+        if (isLaserMode) {
+            laserActiveRef.current = null;
+            return;
+        }
+
         if (isDrawing) {
             setIsDrawing(false);
             if (drawPoints.length >= 4) {
@@ -439,7 +526,7 @@ const CanvasStage = forwardRef(({
                     points: [...drawPoints],
                     x: 0,
                     y: 0,
-                    stroke: '#374151',
+                    stroke: (!drawColor || drawColor === 'transparent') ? '#374151' : drawColor,
                     strokeWidth: connectorDefaults.strokeWidth || 2,
                     lineStyle: connectorDefaults.lineStyle || 'solid',
                     startMarker: connectorDefaults.startMarker || 'none',
@@ -500,24 +587,69 @@ const CanvasStage = forwardRef(({
     } : null;
 
     const renderDrawPreview = () => {
-        if (!isDrawing || drawPoints.length < 4) return null;
-        const previewProps = { points: drawPoints, stroke: '#6366f1', strokeWidth: 2, dash: [6, 3], listening: false };
-        if (activeTool === 'arrow') {
+        const now = Date.now();
+        const lasers = laserTrails.map((trail) => {
+            if (!trail.points || trail.points.length < 4) return null;
+            const age = now - trail.born;
+            const opacity = Math.max(0, 1 - age / LASER_FADE_MS);
             return (
-                <KonvaArrow
-                    points={drawPoints}
-                    stroke="#6366f1"
-                    fill="#6366f1"
-                    strokeWidth={2}
-                    pointerLength={10}
-                    pointerWidth={10}
-                    dash={[6, 3]}
-                    listening={false}
-                />
+                <Group key={trail.id} listening={false} opacity={opacity}>
+                    <Line
+                        points={trail.points}
+                        stroke="#ff1a4a"
+                        strokeWidth={8}
+                        lineCap="round"
+                        lineJoin="round"
+                        tension={0.4}
+                        opacity={0.55}
+                        shadowColor="#ff0040"
+                        shadowBlur={18}
+                        shadowOpacity={0.9}
+                        listening={false}
+                    />
+                    <Line
+                        points={trail.points}
+                        stroke="#ffffff"
+                        strokeWidth={2.5}
+                        lineCap="round"
+                        lineJoin="round"
+                        tension={0.4}
+                        listening={false}
+                    />
+                </Group>
             );
+        });
+
+        let preview = null;
+        if (isDrawing && drawPoints.length >= 4) {
+            const stroke = (!drawColor || drawColor === 'transparent') ? '#6366f1' : drawColor;
+            const previewProps = { points: drawPoints, stroke, strokeWidth: 2, dash: [6, 3], listening: false };
+            if (activeTool === 'arrow') {
+                preview = (
+                    <KonvaArrow
+                        points={drawPoints}
+                        stroke={stroke}
+                        fill={stroke}
+                        strokeWidth={2}
+                        pointerLength={10}
+                        pointerWidth={10}
+                        dash={[6, 3]}
+                        listening={false}
+                    />
+                );
+            } else if (activeTool === 'freehand') {
+                preview = <Line {...previewProps} tension={0.5} lineCap="round" lineJoin="round" dash={undefined} opacity={0.6} />;
+            } else {
+                preview = <Line {...previewProps} />;
+            }
         }
-        if (activeTool === 'freehand') return <Line {...previewProps} tension={0.5} lineCap="round" lineJoin="round" dash={undefined} opacity={0.6} />;
-        return <Line {...previewProps} />;
+
+        return (
+            <>
+                {lasers}
+                {preview}
+            </>
+        );
     };
 
     const selectedObject = useMemo(() => {
@@ -541,7 +673,7 @@ const CanvasStage = forwardRef(({
             worldY = b.y;
             worldW = Math.max(b.width, 1);
             worldH = Math.max(b.height, 1);
-        } else if (obj.type === 'sticky' || obj.type === 'icon') {
+        } else if (obj.type === 'sticky' || obj.type === 'icon' || obj.type === 'umlClass') {
             worldX = obj.x || 0;
             worldY = obj.y || 0;
             worldW = obj.width || 150;
@@ -563,6 +695,7 @@ const CanvasStage = forwardRef(({
     }, [selectedObject, stageScale, stagePos.x, stagePos.y, stageSize.width, stageSize.height]);
 
     const getCursor = () => {
+        if (isLaserMode) return 'crosshair';
         if (isDrawMode || isDraggingSelect) return 'crosshair';
         if (isPanMode) return 'grab';
         return 'default';

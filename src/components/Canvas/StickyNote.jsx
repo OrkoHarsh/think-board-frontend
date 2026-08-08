@@ -114,6 +114,8 @@ const StickyNote = ({ noteProps, isSelected, onSelect, onChange }) => {
                     width={noteWidth}
                     height={noteHeight}
                     fill={noteProps.fill || '#FEF3C7'}
+                    stroke={String(noteProps.fill || '').includes('rgba') ? 'rgba(255,255,255,0.25)' : undefined}
+                    strokeWidth={String(noteProps.fill || '').includes('rgba') ? 1 : 0}
                     shadowColor="black"
                     shadowBlur={5}
                     shadowOpacity={0.2}

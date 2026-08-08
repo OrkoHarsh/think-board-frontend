@@ -37,7 +37,7 @@ const AnimatedIcon = ({ iconProps, isSelected, onSelect, onChange, pulseDelay = 
         img.onload = () => { if (!cancelled) setImage(img); };
         img.onerror = () => { if (!cancelled) { setImageError(true); setImage(null); } };
         return () => { cancelled = true; };
-    }, [iconKey, id]);
+    }, [iconKey, id, isDark]);
 
     useEffect(() => {
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

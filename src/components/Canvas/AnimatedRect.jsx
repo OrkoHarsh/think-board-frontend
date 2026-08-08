@@ -48,16 +48,25 @@ const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay =
         return () => { if (breathFrameRef.current) cancelAnimationFrame(breathFrameRef.current); setBreathScale(1); };
     }, [isAnimating, pulseDelay]);
 
-    const handleDragEnd = (e) => onChange({ x: e.target.x(), y: e.target.y() });
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    // x/y are the top-left corner; the group sits at the centre so the pulse scales outwards.
+    const handleDragEnd = (e) => onChange({ x: e.target.x() - centerX, y: e.target.y() - centerY });
     const handleTransformEnd = (e) => {
         const node = e.target;
         const sx = node.scaleX(), sy = node.scaleY();
         node.scaleX(1); node.scaleY(1);
-        onChange({ x: node.x(), y: node.y(), width: Math.max(24, width * sx), height: Math.max(24, height * sy) });
+        const nextWidth = Math.max(24, width * sx);
+        const nextHeight = Math.max(24, height * sy);
+        onChange({
+            x: node.x() - nextWidth / 2,
+            y: node.y() - nextHeight / 2,
+            width: nextWidth,
+            height: nextHeight,
+        });
     };
 
-    const centerX = width / 2;
-    const centerY = height / 2;
     const displayText = text || label || '';
     const fillColor = fill || (isDark ? '#1e293b' : '#ffffff');
     const textColor = isDark ? '#cbd5e1' : '#334155';
@@ -65,8 +74,8 @@ const AnimatedRect = ({ shapeProps, isSelected, onSelect, onChange, pulseDelay =
     return (
         <Group
             id={id}
-            x={x}
-            y={y}
+            x={x + centerX}
+            y={y + centerY}
             scaleX={breathScale}
             scaleY={breathScale}
             offsetX={centerX}

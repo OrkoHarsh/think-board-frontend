@@ -15,10 +15,12 @@ export function formatBoardDate(board) {
 
     const now = Date.now();
     const diff = now - date.getTime();
-    const day = 86400000;
-    if (diff >= 0 && diff < day) return 'Today';
-    if (diff >= 0 && diff < day * 2) return 'Yesterday';
-    if (diff >= 0 && diff < day * 7) return `${Math.floor(diff / day)}d ago`;
+    if (diff < 0) return 'Just now';
+    if (diff < 60_000) return 'Just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    if (diff < 86_400_000 * 2) return 'Yesterday';
+    if (diff < 86_400_000 * 7) return `${Math.floor(diff / 86_400_000)}d ago`;
 
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
