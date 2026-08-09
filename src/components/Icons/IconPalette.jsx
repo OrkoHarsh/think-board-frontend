@@ -20,7 +20,7 @@ const IconPalette = ({ onAddIcon, onClose }) => {
 
     return (
         <div
-            className="absolute bottom-20 left-4 z-30 w-64 max-h-[min(420px,calc(100%-6rem))] bg-surface/95 border border-hairline rounded-[8px] flex flex-col overflow-hidden"
+            className="absolute bottom-24 lg:bottom-20 left-2 sm:left-4 z-30 w-[min(16rem,calc(100vw-1rem))] max-h-[min(420px,calc(100%-10rem))] bg-surface/95 border border-hairline rounded-[8px] flex flex-col overflow-hidden"
             style={{ boxShadow: 'var(--shadow-soft)' }}
         >
             {/* Header */}

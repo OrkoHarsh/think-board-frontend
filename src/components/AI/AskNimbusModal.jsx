@@ -67,7 +67,7 @@ const AskNimbusModal = ({ isOpen, onClose, onGenerate, isLoading = false, error 
     return (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
             <div
-                className="bg-surface rounded-[10px] p-5 w-full max-w-md border border-hairline"
+                className="bg-surface rounded-[10px] p-4 sm:p-5 w-full max-w-md max-h-[90dvh] overflow-y-auto border border-hairline"
                 style={{ boxShadow: 'var(--shadow-soft)' }}
                 role="dialog"
                 aria-modal="true"

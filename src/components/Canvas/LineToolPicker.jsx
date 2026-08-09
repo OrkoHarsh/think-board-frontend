@@ -77,7 +77,7 @@ const LineToolPicker = ({ tool, value, onChange, onClose }) => {
 
     return (
         <div
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 w-52 rounded-[8px] border border-hairline bg-surface/95 p-2"
+            className="absolute bottom-24 lg:bottom-20 left-1/2 -translate-x-1/2 z-30 w-52 max-w-[calc(100vw-1.5rem)] rounded-[8px] border border-hairline bg-surface/95 p-2"
             style={{ boxShadow: 'var(--shadow-soft)' }}
         >
             <div className="flex items-center justify-between px-1 mb-1.5">

@@ -14,6 +14,14 @@ import { generateId } from '../../utils/helpers';
 const DRAW_TOOLS = ['line', 'arrow', 'freehand'];
 const LASER_FADE_MS = 900;
 
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 5;
+const clampScale = (scale) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+
+// Touch devices need larger transformer handles than a mouse cursor does.
+const COARSE_POINTER =
+    typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
 /** Objects + selection UI — memoized so remote cursor ticks don't reset Konva drag positions */
 const ObjectsLayer = memo(function ObjectsLayer({
     objects,
@@ -121,6 +129,9 @@ const ObjectsLayer = memo(function ObjectsLayer({
 
             <Transformer
                 ref={trRef}
+                anchorSize={COARSE_POINTER ? 14 : 10}
+                anchorCornerRadius={3}
+                rotateAnchorOffset={COARSE_POINTER ? 30 : 20}
                 boundBoxFunc={(oldBox, newBox) =>
                     newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
                 }
@@ -212,6 +223,7 @@ const CanvasStage = forwardRef(({
     const [selectionBox, setSelectionBox] = useState(null);
     const [isDraggingSelect, setIsDraggingSelect] = useState(false);
     const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
+    const pinchRef = useRef({ dist: 0, center: null, active: false });
     const stageRef = useRef();
     const containerRef = useRef();
     const trRef = useRef();
@@ -244,19 +256,30 @@ const CanvasStage = forwardRef(({
     const isPanMode = activeTool === 'hand';
     const isSelectMode = activeTool === 'select';
 
-    // Measure container size on mount and resize
+    // Track the container itself: on mobile the chrome can reflow (wrapping header, URL bar
+    // collapsing) without the window ever firing a resize.
     useEffect(() => {
+        const node = containerRef.current;
+        if (!node) return undefined;
+
         const updateSize = () => {
-            if (containerRef.current) {
-                setStageSize({
-                    width: containerRef.current.offsetWidth,
-                    height: containerRef.current.offsetHeight,
-                });
-            }
+            setStageSize((prev) =>
+                prev.width === node.offsetWidth && prev.height === node.offsetHeight
+                    ? prev
+                    : { width: node.offsetWidth, height: node.offsetHeight }
+            );
         };
+
         updateSize();
-        window.addEventListener('resize', updateSize);
-        return () => window.removeEventListener('resize', updateSize);
+
+        const observer = new ResizeObserver(updateSize);
+        observer.observe(node);
+        window.addEventListener('orientationchange', updateSize);
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('orientationchange', updateSize);
+        };
     }, []);
 
     // Sync shared Transformer to selected Konva nodes (exclude lines/arrows)
@@ -367,7 +390,7 @@ const CanvasStage = forwardRef(({
         // Wheel / trackpad: deltaY > 0 → zoom in; browsers send ctrlKey on pinch
         let direction = e.evt.deltaY > 0 ? 1 : -1;
         if (e.evt.ctrlKey) direction = -direction;
-        const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+        const newScale = clampScale(direction > 0 ? oldScale * scaleBy : oldScale / scaleBy);
         setStageScale(newScale);
         setStagePos({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
     };
@@ -694,6 +717,87 @@ const CanvasStage = forwardRef(({
         };
     }, [selectedObject, stageScale, stagePos.x, stagePos.y, stageSize.width, stageSize.height]);
 
+    /** Drops an in-progress draw/selection without committing it — used when a second finger lands. */
+    const cancelActiveInteraction = () => {
+        laserActiveRef.current = null;
+        selectionStartRef.current = null;
+        setIsDrawing(false);
+        setDrawPoints([]);
+        setIsDraggingSelect(false);
+        setSelectionBox(null);
+    };
+
+    const getTouchPoint = (touch) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        return {
+            x: touch.clientX - (rect?.left || 0),
+            y: touch.clientY - (rect?.top || 0),
+        };
+    };
+
+    // One finger draws, selects or pans depending on the tool; two fingers always pinch-zoom and pan.
+    const handleTouchStart = (e) => {
+        if (e.evt.touches?.length >= 2) {
+            e.evt.preventDefault();
+            pinchRef.current = { dist: 0, center: null, active: true };
+            cancelActiveInteraction();
+            if (stageRef.current?.isDragging()) stageRef.current.stopDrag();
+            return;
+        }
+        handleMouseDown(e);
+    };
+
+    const handleTouchMove = (e) => {
+        const touches = e.evt.touches;
+        if (!touches || touches.length < 2) {
+            if (!pinchRef.current.active) handleMouseMove(e);
+            return;
+        }
+
+        e.evt.preventDefault();
+        const stage = stageRef.current;
+        if (!stage) return;
+        if (stage.isDragging()) stage.stopDrag();
+
+        const p1 = getTouchPoint(touches[0]);
+        const p2 = getTouchPoint(touches[1]);
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        const previous = pinchRef.current;
+
+        // First move of the gesture only establishes the baseline to measure against.
+        if (!previous.center || !previous.dist) {
+            pinchRef.current = { dist, center, active: true };
+            return;
+        }
+
+        const nextScale = clampScale(stageScale * (dist / previous.dist));
+        // Anchor the world point that was under the old centre to wherever the centre moved to,
+        // which gives zoom and pan from the same gesture.
+        const worldCenter = {
+            x: (previous.center.x - stagePos.x) / stageScale,
+            y: (previous.center.y - stagePos.y) / stageScale,
+        };
+
+        setStageScale(nextScale);
+        setStagePos({
+            x: center.x - worldCenter.x * nextScale,
+            y: center.y - worldCenter.y * nextScale,
+        });
+        pinchRef.current = { dist, center, active: true };
+    };
+
+    const handleTouchEnd = (e) => {
+        if (pinchRef.current.active) {
+            // Stay in pinch mode until every finger lifts, so the remaining one doesn't start a draw.
+            if (!e.evt.touches || e.evt.touches.length === 0) {
+                pinchRef.current = { dist: 0, center: null, active: false };
+            }
+            return;
+        }
+        handleMouseUp(e);
+    };
+
     const getCursor = () => {
         if (isLaserMode) return 'crosshair';
         if (isDrawMode || isDraggingSelect) return 'crosshair';
@@ -710,6 +814,9 @@ const CanvasStage = forwardRef(({
                 backgroundSize: `${visualGridSize}px ${visualGridSize}px`,
                 backgroundPosition: `${stagePos.x}px ${stagePos.y}px`,
                 cursor: getCursor(),
+                // The board owns every gesture: no browser pan, page zoom or pull-to-refresh.
+                touchAction: 'none',
+                overscrollBehavior: 'none',
             }}
         >
             <Stage
@@ -717,10 +824,11 @@ const CanvasStage = forwardRef(({
                 height={stageSize.height}
                 style={{ cursor: 'inherit' }}
                 onMouseDown={handleMouseDown}
-                onTouchStart={handleMouseDown}
+                onTouchStart={handleTouchStart}
                 onMouseMove={handleMouseMove}
+                onTouchMove={handleTouchMove}
                 onMouseUp={handleMouseUp}
-                onTouchEnd={handleMouseUp}
+                onTouchEnd={handleTouchEnd}
                 ref={stageRef}
                 onWheel={handleWheel}
                 scaleX={stageScale}

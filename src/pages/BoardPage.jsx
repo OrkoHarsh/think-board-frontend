@@ -494,14 +494,18 @@ const BoardPage = () => {
     const isReadOnly = !canEdit;
 
     return (
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-canvas text-ink">
+        <div
+            className="flex flex-col h-screen w-full overflow-hidden bg-canvas text-ink"
+            /* 100dvh tracks a mobile browser's collapsing URL bar; h-screen is the fallback. */
+            style={{ height: '100dvh' }}
+        >
             {/* Top Navigation Bar — quiet chrome */}
-            <div className="h-12 border-b border-hairline flex items-center justify-between px-3 bg-surface/95 z-20">
-                {/* Left — back + title */}
-                <div className="flex items-center gap-2 min-w-0">
+            <div className="h-12 shrink-0 border-b border-hairline flex items-center gap-2 px-2 sm:px-3 bg-surface/95 z-20">
+                {/* Left — back + title (capped so tablet doesn't leave a huge empty middle) */}
+                <div className="flex items-center gap-1.5 min-w-0 shrink">
                     <button
                         onClick={() => navigate('/dashboard')}
-                        className="p-1.5 hover:bg-surface-raised rounded-[6px] text-ink-faint hover:text-ink transition-colors"
+                        className="p-1.5 hover:bg-surface-raised rounded-[6px] text-ink-faint hover:text-ink transition-colors shrink-0"
                         title="Back to Dashboard"
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -509,27 +513,35 @@ const BoardPage = () => {
                             <polyline points="12 19 5 12 12 5" />
                         </svg>
                     </button>
-                    <h1 className="text-[13px] font-medium text-ink truncate max-w-[220px]">
+                    <h1 className="text-[13px] font-medium text-ink truncate max-w-[96px] md:max-w-[140px] lg:max-w-[220px]">
                         {board.title || 'Untitled Board'}
                     </h1>
                 </div>
 
-                {/* Right — presence + actions */}
-                <div className="flex items-center gap-1.5">
+                {/* Right — presence + actions (icon-only until desktop so tablet stays tight) */}
+                <div className="flex items-center gap-1 lg:gap-1.5 shrink-0 ml-auto">
                     {remoteUsers.length > 0 && (
-                        <div className="flex items-center -space-x-1.5 mr-1">
-                            {remoteUsers.slice(0, 5).map((u) => (
+                        <div className="flex items-center -space-x-1.5 mr-0.5 sm:mr-1">
+                            {remoteUsers.slice(0, 5).map((u, idx) => (
                                 <div
                                     key={u.userId}
                                     title={u.name}
-                                    className="nimbus-animate-presence w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-medium ring-2 ring-surface"
+                                    className={`nimbus-animate-presence w-6 h-6 rounded-full items-center justify-center text-white text-[10px] font-medium ring-2 ring-surface ${
+                                        idx >= 3 ? 'hidden sm:flex' : 'flex'
+                                    }`}
                                     style={{ backgroundColor: u.color }}
                                 >
                                     {u.name.charAt(0).toUpperCase()}
                                 </div>
                             ))}
+                            {/* Only three avatars fit on a phone, so the overflow count differs per breakpoint. */}
+                            {remoteUsers.length > 3 && (
+                                <div className="sm:hidden w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium bg-surface-raised text-ink-muted ring-2 ring-surface">
+                                    +{remoteUsers.length - 3}
+                                </div>
+                            )}
                             {remoteUsers.length > 5 && (
-                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium bg-surface-raised text-ink-muted ring-2 ring-surface">
+                                <div className="hidden sm:flex w-6 h-6 rounded-full items-center justify-center text-[10px] font-medium bg-surface-raised text-ink-muted ring-2 ring-surface">
                                     +{remoteUsers.length - 5}
                                 </div>
                             )}
@@ -542,18 +554,19 @@ const BoardPage = () => {
                             setIsAIModalOpen(true);
                         }}
                         disabled={isReadOnly}
-                        className={`h-8 px-2.5 rounded-[6px] text-[12px] font-medium flex items-center gap-1.5 border border-hairline ${
+                        className={`h-8 w-8 lg:w-auto lg:px-2.5 rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 border border-hairline ${
                             isReadOnly
                                 ? 'text-ink-faint cursor-not-allowed'
                                 : 'text-ink-muted hover:bg-accent-soft hover:text-accent hover:border-accent/30'
                         }`}
                         title="Ask ThinkBoard"
+                        aria-label="Ask AI"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
                             <circle cx="12" cy="12" r="3" />
                         </svg>
-                        Ask AI
+                        <span className="hidden lg:inline">Ask AI</span>
                     </button>
 
                     <button
@@ -584,11 +597,12 @@ const BoardPage = () => {
                         <button
                             onClick={() => setIsExportOpen((v) => !v)}
                             disabled={isRecording}
-                            className={`h-8 px-2.5 rounded-[6px] border border-hairline text-[12px] font-medium flex items-center gap-1.5 ${
+                            className={`h-8 w-8 lg:w-auto lg:px-2.5 rounded-[6px] border border-hairline text-[12px] font-medium flex items-center justify-center gap-1.5 ${
                                 isRecording
                                     ? 'bg-surface-raised text-ink-faint cursor-not-allowed'
                                     : 'text-ink-muted hover:bg-surface-raised'
                             }`}
+                            aria-label="Export"
                         >
                             {isRecording ? (
                                 <>
@@ -596,7 +610,7 @@ const BoardPage = () => {
                                         <circle cx="12" cy="12" r="10" opacity="0.25"/>
                                         <path d="M12 2a10 10 0 0 1 10 10" opacity="1"/>
                                     </svg>
-                                    Recording…
+                                    <span className="hidden lg:inline">Recording…</span>
                                 </>
                             ) : (
                                 <>
@@ -605,7 +619,7 @@ const BoardPage = () => {
                                         <polyline points="7 10 12 15 17 10" />
                                         <line x1="12" y1="15" x2="12" y2="3" />
                                     </svg>
-                                    Export
+                                    <span className="hidden lg:inline">Export</span>
                                 </>
                             )}
                         </button>
@@ -659,13 +673,14 @@ const BoardPage = () => {
                     <div className="relative">
                         <button
                             onClick={() => setIsShareOpen((v) => !v)}
-                            className="h-8 px-3 bg-accent hover:bg-accent-hover text-on-accent rounded-[6px] text-[12px] font-medium flex items-center gap-1.5 transition-colors"
+                            className="h-8 w-8 lg:w-auto lg:px-3 bg-accent hover:bg-accent-hover text-on-accent rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                            aria-label="Share board"
                         >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                             </svg>
-                            Share
+                            <span className="hidden lg:inline">Share</span>
                         </button>
 
                         {isShareOpen && (

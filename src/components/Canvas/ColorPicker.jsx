@@ -23,7 +23,7 @@ const ColorPicker = ({ selectedColor, onChange, className = '' }) => {
     const buttonRef = useRef(null);
     const popupRef = useRef(null);
 
-    // Close on outside click
+    // Close on outside click / tap
     useEffect(() => {
         if (!isOpen) return;
         const handleClickOutside = (e) => {
@@ -35,31 +35,43 @@ const ColorPicker = ({ selectedColor, onChange, className = '' }) => {
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
+        document.addEventListener('touchstart', handleClickOutside, { passive: true });
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside);
+        };
     }, [isOpen]);
 
     const openPicker = () => {
         if (!isOpen && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            const POPUP_H = 380; // estimated popup height
+            const POPUP_H = 380;
             const POPUP_W = 256;
             const GAP = 8;
+            const narrow = window.innerWidth < 1024;
 
-            let top = rect.top;
-            let left = rect.right + GAP;
+            let top;
+            let left;
 
-            // Clamp: don't go below viewport
-            if (top + POPUP_H > window.innerHeight - GAP) {
-                top = window.innerHeight - POPUP_H - GAP;
+            if (narrow) {
+                // Docked toolbar sits at the bottom — open the palette above the swatch.
+                const availableAbove = rect.top - GAP * 2;
+                const height = Math.min(POPUP_H, Math.max(220, availableAbove));
+                top = Math.max(GAP, rect.top - height - GAP);
+                left = rect.left + rect.width / 2 - POPUP_W / 2;
+            } else {
+                top = rect.top;
+                left = rect.right + GAP;
+                if (top + POPUP_H > window.innerHeight - GAP) {
+                    top = window.innerHeight - POPUP_H - GAP;
+                }
+                if (top < GAP) top = GAP;
+                if (left + POPUP_W > window.innerWidth - GAP) {
+                    left = rect.left - POPUP_W - GAP;
+                }
             }
-            // Clamp: don't go above viewport
-            if (top < GAP) top = GAP;
 
-            // If not enough room to the right, flip to the left
-            if (left + POPUP_W > window.innerWidth - GAP) {
-                left = rect.left - POPUP_W - GAP;
-            }
-
+            left = Math.max(GAP, Math.min(left, window.innerWidth - POPUP_W - GAP));
             setPopupPos({ top, left });
         }
         setIsOpen((prev) => !prev);

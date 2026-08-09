@@ -34,12 +34,13 @@ const ConnectorStyleBar = ({ object, anchor, onChange }) => {
     const lineStyle = object.lineStyle || 'solid';
     const strokeWidth = Number(object.strokeWidth) || 2;
 
-    const top = Math.max(8, anchor.top - 48);
+    // Keep the bar on screen in both axes; narrow viewports fall back to scrolling it sideways.
+    const top = Math.min(Math.max(8, anchor.top - 48), window.innerHeight - 56);
     const left = Math.max(8, Math.min(anchor.left, window.innerWidth - 540));
 
     return createPortal(
         <div
-            className="fixed z-[1100] flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg"
+            className="fixed z-[1100] flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg max-w-[calc(100vw-1rem)] overflow-x-auto"
             style={{ top, left }}
             onMouseDown={allowNativeControl}
         >

@@ -8,16 +8,16 @@ const LandingPage = () => {
             <div className="pointer-events-none absolute inset-0 nimbus-atmosphere" />
 
             <div className="relative z-10 min-h-screen flex flex-col">
-                <main className="flex-1 flex flex-col lg:flex-row items-stretch max-w-6xl mx-auto w-full px-6 sm:px-10 pt-16 pb-10 gap-12 lg:gap-16 lg:items-center">
-                    <div className="flex-1 max-w-xl nimbus-animate-hero">
-                        <div className="flex items-center gap-3 mb-8">
-                            <BrandMark className="w-11 h-11" />
-                            <span className="font-display text-4xl sm:text-5xl font-semibold tracking-tight text-ink">
+                <main className="flex-1 flex flex-col lg:flex-row items-stretch max-w-6xl mx-auto w-full min-w-0 px-5 sm:px-10 pt-10 sm:pt-16 pb-10 gap-10 sm:gap-12 lg:gap-16 lg:items-center">
+                    <div className="flex-1 min-w-0 max-w-xl nimbus-animate-hero">
+                        <div className="flex items-center gap-2.5 sm:gap-3 mb-6 sm:mb-8">
+                            <BrandMark className="w-10 h-10 sm:w-11 sm:h-11" />
+                            <span className="font-display text-3xl sm:text-5xl font-semibold tracking-tight text-ink">
                                 ThinkBoard
                             </span>
                         </div>
 
-                        <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-ink leading-[1.2] mb-3">
+                        <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-ink leading-[1.2] mb-3 text-balance">
                             Think together on an open canvas
                         </h1>
                         <p className="text-base sm:text-[17px] text-ink-muted leading-relaxed max-w-md mb-8">

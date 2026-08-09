@@ -80,7 +80,8 @@ const ShareBoardModal = ({ boardId, boardTitle, isOwner, onClose }) => {
     return (
         <>
             <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-            <div className="absolute right-0 top-9 z-50 w-[22rem] bg-surface border border-hairline rounded-[8px] p-4" style={{ boxShadow: 'var(--shadow-soft)' }}>
+            {/* 22rem is wider than a phone, so cap it to the viewport or it hangs off the left edge. */}
+            <div className="absolute right-0 top-9 z-50 w-[min(22rem,calc(100vw-1rem))] max-h-[80dvh] overflow-y-auto bg-surface border border-hairline rounded-[8px] p-4" style={{ boxShadow: 'var(--shadow-soft)' }}>
                 <div className="flex items-start justify-between mb-3">
                     <div>
                         <p className="text-[13px] font-semibold text-ink">Share board</p>

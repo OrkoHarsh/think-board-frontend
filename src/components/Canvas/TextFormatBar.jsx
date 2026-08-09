@@ -81,12 +81,13 @@ const TextFormatBar = ({ object, anchor, onChange }) => {
     const matchedFont = FONTS.find((f) => f.value === fontFamily)?.value || FONTS[0].value;
     const sizeOptions = SIZES.includes(fontSize) ? SIZES : [...SIZES, fontSize].sort((a, b) => a - b);
 
-    const top = Math.max(8, anchor.top - 48);
+    // Keep the bar on screen in both axes; narrow viewports fall back to scrolling it sideways.
+    const top = Math.min(Math.max(8, anchor.top - 48), window.innerHeight - 56);
     const left = Math.max(8, Math.min(anchor.left, window.innerWidth - (object.type === 'sticky' ? 560 : 440)));
 
     return createPortal(
         <div
-            className="fixed z-[1100] flex items-center gap-1 px-2 py-1.5 rounded-[8px] border border-hairline bg-surface/95"
+            className="fixed z-[1100] flex items-center gap-1 px-2 py-1.5 rounded-[8px] border border-hairline bg-surface/95 max-w-[calc(100vw-1rem)] overflow-x-auto"
             style={{ top, left, boxShadow: 'var(--shadow-soft)' }}
             onMouseDown={allowNativeControl}
         >

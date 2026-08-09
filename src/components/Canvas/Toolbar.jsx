@@ -1,12 +1,59 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ColorPicker from './ColorPicker';
 
 const toolBtn = (active) =>
-    `w-9 h-9 flex items-center justify-center rounded-[6px] transition-colors ${
+    `w-9 h-9 shrink-0 flex items-center justify-center rounded-[6px] transition-colors ${
         active
             ? 'bg-accent-soft text-accent'
             : 'text-ink-muted hover:bg-surface-raised hover:text-ink'
     }`;
+
+const touchBtn = (active) =>
+    `h-11 min-w-11 flex-1 flex items-center justify-center rounded-[10px] transition-colors ${
+        active ? 'bg-accent-soft text-accent' : 'text-ink-muted active:bg-surface-raised'
+    }`;
+
+const touchTile = (active) =>
+    `min-h-[52px] flex flex-col items-center justify-center gap-1 rounded-[9px] transition-colors ${
+        active ? 'bg-accent-soft text-accent' : 'text-ink-muted active:bg-surface-raised'
+    }`;
+
+const SHORT_LABELS = {
+    select: 'Select',
+    hand: 'Pan',
+    rect: 'Rect',
+    circle: 'Circle',
+    triangle: 'Triangle',
+    diamond: 'Diamond',
+    ellipse: 'Ellipse',
+    umlClass: 'Class',
+    line: 'Line',
+    arrow: 'Arrow',
+    text: 'Text',
+    note: 'Note',
+    freehand: 'Pen',
+    laser: 'Laser',
+    eraser: 'Eraser',
+};
+
+const PHONE_QUICK_IDS = ['select', 'hand', 'note', 'freehand'];
+const TABLET_QUICK_IDS = ['select', 'hand', 'note', 'text', 'freehand', 'arrow'];
+
+const ToolIcon = ({ children, size = 18 }) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        {children}
+    </svg>
+);
 
 const Toolbar = ({
     activeTool,
@@ -21,6 +68,26 @@ const Toolbar = ({
     onAnimateAll,
     isAnimating = false,
 }) => {
+    const [expanded, setExpanded] = useState(false);
+    // Drive layout from JS so we never rely on Tailwind alone for which chrome is mounted.
+    const [layout, setLayout] = useState('desktop'); // 'phone' | 'tablet' | 'desktop'
+
+    useEffect(() => {
+        const sync = () => {
+            const w = window.innerWidth;
+            if (w < 640) setLayout('phone');
+            else if (w < 1024) setLayout('tablet');
+            else setLayout('desktop');
+        };
+        sync();
+        window.addEventListener('resize', sync);
+        return () => window.removeEventListener('resize', sync);
+    }, []);
+
+    useEffect(() => {
+        if (layout === 'desktop') setExpanded(false);
+    }, [layout]);
+
     const toolSections = [
         {
             tools: [
@@ -157,9 +224,161 @@ const Toolbar = ({
         },
     ];
 
+    const allTools = toolSections.flatMap((section) => section.tools);
+    const toolById = Object.fromEntries(allTools.map((tool) => [tool.id, tool]));
+    const quickIds = layout === 'tablet' ? TABLET_QUICK_IDS : PHONE_QUICK_IDS;
+
+    const pickTool = (tool) => {
+        setActiveTool(tool.id);
+        if (tool.action) tool.action();
+    };
+
+    const iconPaletteIcon = (
+        <>
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+        </>
+    );
+
+    if (layout !== 'desktop') {
+        const dock = (
+            <div
+                className="fixed inset-x-0 bottom-0 z-[80] px-3"
+                style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+            >
+                {expanded && (
+                    <div
+                        className="mb-2 mx-auto w-full max-w-lg max-h-[min(48dvh,380px)] overflow-y-auto rounded-[14px] border border-hairline bg-surface p-2.5"
+                        style={{ boxShadow: 'var(--shadow-soft)' }}
+                    >
+                        <div className="mb-2 flex items-center justify-between px-1">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-ink-faint">
+                                All tools
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => setExpanded(false)}
+                                className="text-[12px] text-ink-muted px-2 py-1 rounded-[6px] active:bg-surface-raised"
+                            >
+                                Done
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1 sm:grid-cols-6">
+                            {allTools.map((tool) => (
+                                <button
+                                    key={tool.id}
+                                    type="button"
+                                    onClick={() => {
+                                        pickTool(tool);
+                                        setExpanded(false);
+                                    }}
+                                    className={touchTile(activeTool === tool.id)}
+                                    aria-pressed={activeTool === tool.id}
+                                >
+                                    <ToolIcon>{tool.icon}</ToolIcon>
+                                    <span className="w-full truncate px-0.5 text-center text-[10px] leading-none">
+                                        {SHORT_LABELS[tool.id] || tool.label}
+                                    </span>
+                                </button>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onToggleIconPalette();
+                                    setExpanded(false);
+                                }}
+                                className={touchTile(showIconPalette)}
+                                aria-pressed={showIconPalette}
+                            >
+                                <ToolIcon>{iconPaletteIcon}</ToolIcon>
+                                <span className="text-[10px] leading-none">Shapes</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onAnimateAll();
+                                    setExpanded(false);
+                                }}
+                                className={touchTile(isAnimating)}
+                                aria-pressed={isAnimating}
+                            >
+                                {isAnimating ? (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                                    </svg>
+                                ) : (
+                                    <ToolIcon>
+                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                    </ToolIcon>
+                                )}
+                                <span className="text-[10px] leading-none">{isAnimating ? 'Pause' : 'Play'}</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Full-width dock — never depends on left/translate centering. */}
+                <div
+                    className="mx-auto flex w-full max-w-lg items-center gap-1 rounded-[14px] border border-hairline bg-surface px-1.5 py-1.5"
+                    style={{ boxShadow: 'var(--shadow-soft)' }}
+                    role="toolbar"
+                    aria-label="Canvas tools"
+                >
+                    {quickIds.map((id) => {
+                        const tool = toolById[id];
+                        if (!tool) return null;
+                        return (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => pickTool(tool)}
+                                className={touchBtn(activeTool === id)}
+                                aria-pressed={activeTool === id}
+                                aria-label={tool.label}
+                            >
+                                <ToolIcon>{tool.icon}</ToolIcon>
+                            </button>
+                        );
+                    })}
+
+                    <div className="w-px h-6 bg-hairline shrink-0" />
+
+                    <div className="flex items-center px-0.5 shrink-0">
+                        <ColorPicker selectedColor={selectedColor} onChange={onColorChange} />
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setExpanded((prev) => !prev)}
+                        className={`${touchBtn(expanded)} max-w-14`}
+                        aria-expanded={expanded}
+                        aria-label={expanded ? 'Hide tools' : 'More tools'}
+                    >
+                        <ToolIcon>
+                            {expanded ? (
+                                <path d="M6 9l6 6 6-6" />
+                            ) : (
+                                <>
+                                    <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                    <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                    <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                </>
+                            )}
+                        </ToolIcon>
+                    </button>
+                </div>
+            </div>
+        );
+
+        return createPortal(dock, document.body);
+    }
+
     return (
         <div
-            className="nimbus-animate-rail absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-1.5 py-1.5 rounded-[8px] border border-hairline bg-surface/95 max-w-[calc(100vw-2rem)] overflow-x-auto"
+            className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[8px] border border-hairline bg-surface/95 px-1.5 py-1.5 max-w-[calc(100vw-2rem)] overflow-x-auto"
             style={{ boxShadow: 'var(--shadow-soft)' }}
             role="toolbar"
             aria-label="Canvas tools"
@@ -171,25 +390,11 @@ const Toolbar = ({
                         <button
                             key={tool.id}
                             type="button"
-                            onClick={() => {
-                                setActiveTool(tool.id);
-                                if (tool.action) tool.action();
-                            }}
+                            onClick={() => pickTool(tool)}
                             className={toolBtn(activeTool === tool.id)}
                             title={tool.label}
                         >
-                            <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            >
-                                {tool.icon}
-                            </svg>
+                            <ToolIcon size={16}>{tool.icon}</ToolIcon>
                         </button>
                     ))}
                 </React.Fragment>
@@ -203,12 +408,7 @@ const Toolbar = ({
                 className={toolBtn(showIconPalette)}
                 title="Shape Library"
             >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7" rx="1" />
-                    <rect x="14" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" />
-                    <rect x="14" y="14" width="7" height="7" rx="1" />
-                </svg>
+                <ToolIcon size={16}>{iconPaletteIcon}</ToolIcon>
             </button>
 
             <button
@@ -223,14 +423,14 @@ const Toolbar = ({
                         <rect x="14" y="4" width="4" height="16" rx="1" />
                     </svg>
                 ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <ToolIcon size={16}>
                         <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
+                    </ToolIcon>
                 )}
             </button>
 
             <div className="w-px h-6 bg-hairline mx-1 shrink-0" />
-            <div className="px-1 flex items-center" title={activeTool === 'freehand' || activeTool === 'laser' ? 'Pen / laser color' : 'Shape / sticky / pen color'}>
+            <div className="px-1 flex items-center">
                 <ColorPicker selectedColor={selectedColor} onChange={onColorChange} />
             </div>
         </div>
