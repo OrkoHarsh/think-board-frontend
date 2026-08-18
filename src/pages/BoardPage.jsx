@@ -823,10 +823,13 @@ const BoardPage = () => {
                             setAnimKey((k) => k + 1);
                         } catch (err) {
                             console.error('AI generation failed:', err);
+                            const status = err.response?.status;
                             const message =
-                                err.response?.data?.message ||
-                                err.message ||
-                                'AI generation failed. Please try again.';
+                                status === 429
+                                    ? (err.response?.data?.message || 'Daily AI limit reached. Try again tomorrow.')
+                                    : (err.response?.data?.message ||
+                                        err.message ||
+                                        'AI generation failed. Please try again.');
                             setAiError(message);
                         } finally {
                             setAiLoading(false);
