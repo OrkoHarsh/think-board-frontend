@@ -5,8 +5,9 @@ import { useBoardData } from '../hooks/useBoardData';
 import { usePresence, getUserColor } from '../hooks/usePresence';
 import { useTheme } from '../hooks/useTheme';
 import CanvasStage from '../components/Canvas/CanvasStage';
-import Toolbar from '../components/Canvas/Toolbar';
+import Toolbar, { PLACE_TOOLS, STICKY_PASTELS } from '../components/Canvas/Toolbar';
 import LineToolPicker from '../components/Canvas/LineToolPicker';
+import EmptyBoardCoach from '../components/Canvas/EmptyBoardCoach';
 import { umlClassHeight } from '../utils/umlClass';
 import AskNimbusModal from '../components/AI/AskNimbusModal';
 import IconPalette from '../components/Icons/IconPalette';
@@ -45,6 +46,7 @@ const BoardPage = () => {
     const pastRef = useRef([]);
     const futureRef = useRef([]);
     const objectsSnapshotRef = useRef([]);
+    const [historyTick, setHistoryTick] = useState(0);
 
     useEffect(() => {
         objectsSnapshotRef.current = board?.objects || [];
@@ -56,6 +58,7 @@ const BoardPage = () => {
             JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])),
         ];
         futureRef.current = [];
+        setHistoryTick((t) => t + 1);
     }, []);
 
     const handleUndo = useCallback(() => {
@@ -63,6 +66,7 @@ const BoardPage = () => {
         const prev = pastRef.current.pop();
         futureRef.current.push(JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])));
         replaceAllObjects(prev);
+        setHistoryTick((t) => t + 1);
     }, [replaceAllObjects]);
 
     const handleRedo = useCallback(() => {
@@ -70,7 +74,11 @@ const BoardPage = () => {
         const next = futureRef.current.pop();
         pastRef.current.push(JSON.parse(JSON.stringify(objectsSnapshotRef.current || [])));
         replaceAllObjects(next);
+        setHistoryTick((t) => t + 1);
     }, [replaceAllObjects]);
+
+    const canUndo = historyTick >= 0 && pastRef.current.length > 0;
+    const canRedo = historyTick >= 0 && futureRef.current.length > 0;
 
     const addObjectTracked = useCallback((obj) => {
         pushHistory();
@@ -120,7 +128,7 @@ const BoardPage = () => {
     const [stageScale, setStageScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
     const [activeTool, setActiveTool] = useState('select');
-    const [selectedColor, setSelectedColor] = useState('#3B82F6');
+    const [selectedColor, setSelectedColor] = useState('#FEF3C7');
     const [showIconPalette, setShowIconPalette] = useState(false);
     const [animKey, setAnimKey] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
@@ -373,6 +381,139 @@ const BoardPage = () => {
         }
     };
 
+    const getCenterPos = useCallback(() => ({
+        x: (window.innerWidth / 2 - stagePos.x) / stageScale,
+        y: (window.innerHeight / 2 - stagePos.y) / stageScale,
+    }), [stagePos.x, stagePos.y, stageScale]);
+
+    const openAI = useCallback(() => {
+        setAiError(null);
+        setIsAIModalOpen(true);
+    }, []);
+
+    /** Build + place an object at world coords; returns id for selection */
+    const handlePlaceObject = useCallback(
+        (tool, worldX, worldY) => {
+            const id = generateId();
+            const color = selectedColor;
+
+            if (tool === 'note') {
+                const fill =
+                    !color || color === 'transparent'
+                        ? STICKY_PASTELS[0]
+                        : color;
+                addObjectTracked({
+                    id,
+                    type: 'sticky',
+                    x: worldX - 75,
+                    y: worldY - 75,
+                    width: 150,
+                    height: 150,
+                    text: '',
+                    fill,
+                    fontFamily: 'Geist Sans, system-ui, sans-serif',
+                    fontSize: 16,
+                    fontStyle: 'normal',
+                    textDecoration: '',
+                    align: 'left',
+                });
+                return id;
+            }
+
+            if (tool === 'text') {
+                addObjectTracked({
+                    id,
+                    type: 'text',
+                    x: worldX - 100,
+                    y: worldY - 25,
+                    width: 200,
+                    height: 50,
+                    text: 'Type here',
+                    fill: (!color || color === 'transparent') ? '#0c0f12' : color,
+                    fontFamily: 'Geist Sans, system-ui, sans-serif',
+                    fontSize: 20,
+                    fontStyle: 'normal',
+                    textDecoration: '',
+                    align: 'center',
+                });
+                return id;
+            }
+
+            if (tool === 'umlClass') {
+                const umlWidth = 220;
+                const node = {
+                    className: 'ClassName',
+                    attributes: ['- id: UUID', '- name: String'],
+                    methods: ['+ getName(): String'],
+                };
+                const umlHeight = umlClassHeight(node);
+                addObjectTracked({
+                    id,
+                    type: tool,
+                    x: worldX - umlWidth / 2,
+                    y: worldY - umlHeight / 2,
+                    width: umlWidth,
+                    height: umlHeight,
+                    fill: (!color || color === 'transparent') ? '#FFFFFF' : color,
+                    stroke: '#94A3B8',
+                    fontFamily: 'Geist Sans, system-ui, sans-serif',
+                    fontSize: 13,
+                    ...node,
+                });
+                return id;
+            }
+
+            const width = tool === 'ellipse' ? 160 : 100;
+            const height = tool === 'ellipse' ? 90 : 100;
+            addObjectTracked({
+                id,
+                type: tool,
+                x: worldX - width / 2,
+                y: worldY - height / 2,
+                width,
+                height,
+                fill: (!color || color === 'transparent') ? '#3B82F6' : color,
+                fontFamily: 'Geist Sans, system-ui, sans-serif',
+                fontSize: 14,
+                fontStyle: 'normal',
+                textDecoration: '',
+                align: 'center',
+            });
+            return id;
+        },
+        [addObjectTracked, selectedColor]
+    );
+
+    const handleAddNoteAtCenter = useCallback(() => {
+        const center = getCenterPos();
+        setActiveTool('note');
+        handlePlaceObject('note', center.x, center.y);
+        setActiveTool('select');
+    }, [getCenterPos, handlePlaceObject]);
+
+    const handleAddIcon = useCallback((icon) => {
+        const center = getCenterPos();
+        addObjectTracked({
+            id: generateId(),
+            type: 'icon',
+            x: center.x - 32,
+            y: center.y - 32,
+            width: 64,
+            height: 64,
+            iconKey: icon.key,
+            label: icon.label,
+        });
+    }, [addObjectTracked, getCenterPos]);
+
+    const handleSetActiveTool = useCallback((id) => {
+        setActiveTool(id);
+        if (id === 'line' || id === 'arrow') setShowLinePicker(true);
+        // Prefer sticky pastel when switching to Note
+        if (id === 'note' && (!selectedColor || selectedColor === 'transparent' || selectedColor === '#3B82F6')) {
+            setSelectedColor(STICKY_PASTELS[0]);
+        }
+    }, [selectedColor]);
+
     if (status === 'loading') {
         return <div className="flex items-center justify-center h-screen bg-paper text-ink-faint text-[13px]">Loading board…</div>;
     }
@@ -389,97 +530,6 @@ const BoardPage = () => {
     }
 
     if (!board) return null;
-
-    const getCenterPos = () => ({
-        x: (window.innerWidth / 2 - stagePos.x) / stageScale,
-        y: (window.innerHeight / 2 - stagePos.y) / stageScale,
-    });
-
-    const handleAddShape = (type) => {
-        const center = getCenterPos();
-        if (type === 'umlClass') {
-            const umlWidth = 220;
-            const node = {
-                className: 'ClassName',
-                attributes: ['- id: UUID', '- name: String'],
-                methods: ['+ getName(): String'],
-            };
-            const umlHeight = umlClassHeight(node);
-            addObjectTracked({
-                id: generateId(),
-                type,
-                x: center.x - umlWidth / 2,
-                y: center.y - umlHeight / 2,
-                width: umlWidth,
-                height: umlHeight,
-                fill: (!selectedColor || selectedColor === 'transparent') ? '#FFFFFF' : selectedColor,
-                stroke: '#94A3B8',
-                fontFamily: 'Geist Sans, system-ui, sans-serif',
-                fontSize: 13,
-                ...node,
-            });
-            return;
-        }
-        // Ellipse must be wider than tall so it doesn't look like a circle
-        const width = type === 'ellipse' ? 160 : 100;
-        const height = type === 'ellipse' ? 90 : 100;
-        addObjectTracked({
-            id: generateId(),
-            type,
-            x: center.x - width / 2,
-            y: center.y - height / 2,
-            width,
-            height,
-            fill: selectedColor,
-            fontFamily: 'Geist Sans, system-ui, sans-serif',
-            fontSize: 14,
-            fontStyle: 'normal',
-            textDecoration: '',
-            align: 'center',
-        });
-    };
-
-    const handleAddNote = () => {
-        const center = getCenterPos();
-        const fill = (!selectedColor || selectedColor === 'transparent') ? '#FEF3C7' : selectedColor;
-        addObjectTracked({
-            id: generateId(),
-            type: 'sticky',
-            x: center.x - 75,
-            y: center.y - 75,
-            text: 'New Idea',
-            fill,
-            fontFamily: 'Geist Sans, system-ui, sans-serif',
-            fontSize: 16,
-            fontStyle: 'normal',
-            textDecoration: '',
-            align: 'left',
-        });
-    };
-
-    const handleAddIcon = (icon) => {
-        const center = getCenterPos();
-        addObjectTracked({ id: generateId(), type: 'icon', x: center.x - 32, y: center.y - 32, width: 64, height: 64, iconKey: icon.key, label: icon.label });
-    };
-
-    const handleAddText = () => {
-        const center = getCenterPos();
-        addObjectTracked({
-            id: generateId(),
-            type: 'text',
-            x: center.x - 100,
-            y: center.y - 25,
-            width: 200,
-            height: 50,
-            text: 'Type here',
-            fill: selectedColor,
-            fontFamily: 'Geist Sans, system-ui, sans-serif',
-            fontSize: 20,
-            fontStyle: 'normal',
-            textDecoration: '',
-            align: 'center',
-        });
-    };
 
     const remoteUsers = Object.values(presence).filter((u) => u.userId !== currentUser?.id);
     // Only other users' cursors — drawing our own causes the lagging double-cursor
@@ -499,27 +549,57 @@ const BoardPage = () => {
             /* 100dvh tracks a mobile browser's collapsing URL bar; h-screen is the fallback. */
             style={{ height: '100dvh' }}
         >
-            {/* Top Navigation Bar — quiet chrome */}
-            <div className="h-12 shrink-0 border-b border-hairline flex items-center gap-2 px-2 sm:px-3 bg-surface/95 z-20">
-                {/* Left — back + title (capped so tablet doesn't leave a huge empty middle) */}
-                <div className="flex items-center gap-1.5 min-w-0 shrink">
+            {/* Top Navigation Bar — recessed chrome */}
+            <div className="h-10 shrink-0 border-b border-hairline flex items-center gap-1.5 px-2 sm:px-3 bg-surface/90 z-20">
+                {/* Left — back + title + undo */}
+                <div className="flex items-center gap-1 min-w-0 shrink">
                     <button
                         onClick={() => navigate('/dashboard')}
-                        className="p-1.5 hover:bg-surface-raised rounded-[6px] text-ink-faint hover:text-ink transition-colors shrink-0"
+                        className="p-1.5 hover:bg-surface-raised rounded-[6px] text-ink-faint hover:text-ink transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         title="Back to Dashboard"
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="19" y1="12" x2="5" y2="12" />
                             <polyline points="12 19 5 12 12 5" />
                         </svg>
                     </button>
-                    <h1 className="text-[13px] font-medium text-ink truncate max-w-[96px] md:max-w-[140px] lg:max-w-[220px]">
+                    <h1 className="text-[13px] font-medium text-ink truncate max-w-[88px] md:max-w-[140px] lg:max-w-[200px]">
                         {board.title || 'Untitled Board'}
                     </h1>
+                    {!isReadOnly && (
+                        <div className="flex items-center gap-0.5 ml-0.5">
+                            <button
+                                type="button"
+                                onClick={handleUndo}
+                                disabled={!canUndo}
+                                className="h-7 w-7 rounded-[6px] text-ink-muted hover:bg-surface-raised hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                                title="Undo (Ctrl+Z)"
+                                aria-label="Undo"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 7v6h6" />
+                                    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.36 2.64L3 13" />
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRedo}
+                                disabled={!canRedo}
+                                className="h-7 w-7 rounded-[6px] text-ink-muted hover:bg-surface-raised hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                                title="Redo (Ctrl+Y)"
+                                aria-label="Redo"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 7v6h-6" />
+                                    <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.36 2.64L21 13" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
-                {/* Right — presence + actions (icon-only until desktop so tablet stays tight) */}
-                <div className="flex items-center gap-1 lg:gap-1.5 shrink-0 ml-auto">
+                {/* Right — presence + primary actions */}
+                <div className="flex items-center gap-0.5 lg:gap-1 shrink-0 ml-auto">
                     {remoteUsers.length > 0 && (
                         <div className="flex items-center -space-x-1.5 mr-0.5 sm:mr-1">
                             {remoteUsers.slice(0, 5).map((u, idx) => (
@@ -534,7 +614,6 @@ const BoardPage = () => {
                                     {u.name.charAt(0).toUpperCase()}
                                 </div>
                             ))}
-                            {/* Only three avatars fit on a phone, so the overflow count differs per breakpoint. */}
                             {remoteUsers.length > 3 && (
                                 <div className="sm:hidden w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium bg-surface-raised text-ink-muted ring-2 ring-surface">
                                     +{remoteUsers.length - 3}
@@ -549,15 +628,12 @@ const BoardPage = () => {
                     )}
 
                     <button
-                        onClick={() => {
-                            setAiError(null);
-                            setIsAIModalOpen(true);
-                        }}
+                        onClick={openAI}
                         disabled={isReadOnly}
-                        className={`h-8 w-8 lg:w-auto lg:px-2.5 rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 border border-hairline ${
+                        className={`h-7 w-7 lg:w-auto lg:px-2.5 rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                             isReadOnly
                                 ? 'text-ink-faint cursor-not-allowed'
-                                : 'text-ink-muted hover:bg-accent-soft hover:text-accent hover:border-accent/30'
+                                : 'text-ink-muted hover:bg-accent-soft hover:text-accent'
                         }`}
                         title="Ask ThinkBoard"
                         aria-label="Ask AI"
@@ -571,11 +647,11 @@ const BoardPage = () => {
 
                     <button
                         onClick={toggleTheme}
-                        className="h-8 w-8 rounded-[6px] border border-hairline text-ink-muted hover:bg-surface-raised flex items-center justify-center"
+                        className="h-7 w-7 rounded-[6px] text-ink-faint hover:text-ink-muted hover:bg-surface-raised flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         title={isDark ? 'Light mode' : 'Dark mode'}
                     >
                         {isDark ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <circle cx="12" cy="12" r="5" />
                                 <line x1="12" y1="1" x2="12" y2="3" />
                                 <line x1="12" y1="21" x2="12" y2="23" />
@@ -587,7 +663,7 @@ const BoardPage = () => {
                                 <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
                             </svg>
                         ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                             </svg>
                         )}
@@ -597,30 +673,25 @@ const BoardPage = () => {
                         <button
                             onClick={() => setIsExportOpen((v) => !v)}
                             disabled={isRecording}
-                            className={`h-8 w-8 lg:w-auto lg:px-2.5 rounded-[6px] border border-hairline text-[12px] font-medium flex items-center justify-center gap-1.5 ${
+                            className={`h-7 w-7 rounded-[6px] text-[12px] flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                                 isRecording
                                     ? 'bg-surface-raised text-ink-faint cursor-not-allowed'
-                                    : 'text-ink-muted hover:bg-surface-raised'
+                                    : 'text-ink-faint hover:text-ink-muted hover:bg-surface-raised'
                             }`}
                             aria-label="Export"
+                            title="Export"
                         >
                             {isRecording ? (
-                                <>
-                                    <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <circle cx="12" cy="12" r="10" opacity="0.25"/>
-                                        <path d="M12 2a10 10 0 0 1 10 10" opacity="1"/>
-                                    </svg>
-                                    <span className="hidden lg:inline">Recording…</span>
-                                </>
+                                <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                                    <path d="M12 2a10 10 0 0 1 10 10" opacity="1"/>
+                                </svg>
                             ) : (
-                                <>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                    </svg>
-                                    <span className="hidden lg:inline">Export</span>
-                                </>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
                             )}
                         </button>
 
@@ -628,7 +699,7 @@ const BoardPage = () => {
                             <>
                                 <div className="fixed inset-0 z-30" onClick={() => setIsExportOpen(false)} />
                                 <div
-                                    className="absolute right-0 top-9 z-40 w-52 bg-surface border border-hairline rounded-[8px] p-1.5"
+                                    className="absolute right-0 top-8 z-40 w-52 bg-surface border border-hairline rounded-[8px] p-1.5"
                                     style={{ boxShadow: 'var(--shadow-soft)' }}
                                 >
                                     <button
@@ -673,7 +744,7 @@ const BoardPage = () => {
                     <div className="relative">
                         <button
                             onClick={() => setIsShareOpen((v) => !v)}
-                            className="h-8 w-8 lg:w-auto lg:px-3 bg-accent hover:bg-accent-hover text-on-accent rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                            className="h-7 w-7 lg:w-auto lg:px-2.5 bg-accent hover:bg-accent-hover text-on-accent rounded-[6px] text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                             aria-label="Share board"
                         >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -714,20 +785,31 @@ const BoardPage = () => {
                     {!isReadOnly && (
                     <Toolbar
                         activeTool={activeTool}
-                        setActiveTool={(id) => {
-                            setActiveTool(id);
-                            if (id === 'line' || id === 'arrow') setShowLinePicker(true);
-                        }}
-                        onAddShape={handleAddShape}
-                        onAddNote={handleAddNote}
-                        onAddText={handleAddText}
+                        setActiveTool={handleSetActiveTool}
                         selectedColor={selectedColor}
                         onColorChange={setSelectedColor}
                         showIconPalette={showIconPalette}
                         onToggleIconPalette={() => setShowIconPalette((v) => !v)}
                         onAnimateAll={toggleAnimation}
                         isAnimating={isAnimating}
+                        onAskAI={openAI}
+                        aiDisabled={isReadOnly}
                     />
+                    )}
+
+                    {!isReadOnly && PLACE_TOOLS.includes(activeTool) && (
+                        <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded-[6px] border border-hairline bg-surface/95 text-[12px] text-ink-muted" style={{ boxShadow: 'var(--shadow-soft)' }}>
+                            Click canvas to place
+                        </div>
+                    )}
+
+                    {!isReadOnly && (
+                        <EmptyBoardCoach
+                            boardId={boardId}
+                            visible={(board.objects || []).length === 0}
+                            onAddSticky={handleAddNoteAtCenter}
+                            onAskAI={openAI}
+                        />
                     )}
 
                     {!isReadOnly && showLinePicker && (activeTool === 'line' || activeTool === 'arrow') && (
@@ -749,6 +831,7 @@ const BoardPage = () => {
                         onUpdate={isReadOnly ? () => {} : updateObjectTracked}
                         onDelete={isReadOnly ? () => {} : deleteObjectTracked}
                         onAdd={isReadOnly ? () => {} : addObjectTracked}
+                        onPlace={isReadOnly ? undefined : handlePlaceObject}
                         onSelect={(id) => id}
                         activeTool={isReadOnly ? 'hand' : activeTool}
                         drawColor={selectedColor}
@@ -773,13 +856,14 @@ const BoardPage = () => {
                     isOpen={isAIModalOpen}
                     isLoading={aiLoading}
                     error={aiError}
+                    hasExistingObjects={(board.objects || []).length > 0}
                     onClose={() => {
                         if (!aiLoading) {
                             setAiError(null);
                             setIsAIModalOpen(false);
                         }
                     }}
-                    onGenerate={async (prompt, requestedType) => {
+                    onGenerate={async (prompt, requestedType, placement = 'append') => {
                         setAiLoading(true);
                         setAiError(null);
                         try {
@@ -798,8 +882,6 @@ const BoardPage = () => {
                             if (resolvedType === 'CLASS') {
                                 mappedObjects = classDiagramToBoardObjects(mermaid, center.x, center.y);
                             } else if (resolvedType === 'FLOWCHART') {
-                                // Flowcharts keep their decision shapes and edge labels, which the
-                                // HLD preprocessor is not designed to preserve.
                                 mappedObjects = await mermaidToBoardObjects(mermaid, center.x, center.y);
                             } else {
                                 const cleanedMermaid = preprocessMermaid(mermaid);
@@ -817,8 +899,12 @@ const BoardPage = () => {
                             }));
 
                             pushHistory();
-                            replaceAllObjects(objects);
-                            // Close the modal early so its backdrop can't visually block the UI.
+                            if (placement === 'replace') {
+                                replaceAllObjects(objects);
+                            } else {
+                                const existing = currentObjectsRef.current || [];
+                                replaceAllObjects([...existing, ...objects]);
+                            }
                             setIsAIModalOpen(false);
                             setAnimKey((k) => k + 1);
                         } catch (err) {
